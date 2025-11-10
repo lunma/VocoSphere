@@ -30,14 +30,10 @@
       "icons/icon.png"
     ],
     "macOS": {
-      "signing": {
-        "signingIdentity": null
-      },
+      "signingIdentity": null,
       "entitlements": null
     },
-    "windows": {
-      "certificateThumbprint": null
-    }
+    "windows": {}
   }
 }
 
