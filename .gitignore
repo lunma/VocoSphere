@@ -1,0 +1,28 @@
+# Node.js
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+target/
+
+# 音频输出文件
+audio_output/
+*.wav
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# pnpm store
+.pnpm-store/
