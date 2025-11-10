@@ -70,15 +70,15 @@ jobs:
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5.13
-        env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        # env:
+        #   TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        #   TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        #   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        #   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        #   APPLE_ID: ${{ secrets.APPLE_ID }}
+        #   APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        #   APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        #   APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           projectPath: .
           tauriScript: pnpm tauri
