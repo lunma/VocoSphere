@@ -28,7 +28,16 @@
     "targets": "all",
     "icon": [
       "icons/icon.png"
-    ]
+    ],
+    "macOS": {
+      "signing": {
+        "signingIdentity": null
+      },
+      "entitlements": null
+    },
+    "windows": {
+      "certificateThumbprint": null
+    }
   }
 }
 
