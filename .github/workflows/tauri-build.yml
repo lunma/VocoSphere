@@ -51,7 +51,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf  \
+            libasound2-dev
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@1.84.0
@@ -88,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.4.3
         with:
-          name: tauri-bundle-${{ matrix.platform }}
+          name: vocosphere-bundle-${{ matrix.platform }}
           path: src-tauri/target/release/bundle/**
           if-no-files-found: warn
         # 将各平台的打包产物上传为构建工件，便于下载测试
