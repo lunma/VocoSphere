@@ -59,7 +59,7 @@ jobs:
         # 安装稳定版 Rust（含 cargo、rustup）
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2.7.3
+        uses: Swatinem/rust-cache@v2.8.0
         with:
           workspaces: |
             src-tauri -> target
