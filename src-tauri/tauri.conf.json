@@ -16,7 +16,8 @@
         "width": 1280,
         "height": 832,
         "minWidth": 1024,
-        "minHeight": 720
+        "minHeight": 720,
+        "center": true
       }
     ],
     "security": {
@@ -28,7 +29,8 @@
     "targets": "all",
     "icon": [
       "icons/icon.png",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/icon.icns"
     ],
     "macOS": {
       "signingIdentity": null,
