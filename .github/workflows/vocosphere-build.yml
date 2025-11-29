@@ -155,7 +155,7 @@ jobs:
             ### 📝 变更说明
             - 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})
           files: |
-            artifacts/**/*
+            artifacts/vocosphere-bundle-*/**
           draft: ${{ steps.release-type.outputs.is_draft }}
           prerelease: ${{ steps.release-type.outputs.is_prerelease }}
         env:
