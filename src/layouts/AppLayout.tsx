@@ -1,8 +1,9 @@
+import { HomeOutlined, SoundOutlined, HistoryOutlined } from '@ant-design/icons'
+import { Layout, Menu, Typography, Space, theme } from 'antd'
 import { useMemo } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Layout, Menu, Typography, Space, theme } from 'antd'
+
 import type { MenuProps } from 'antd'
-import { HomeOutlined, SoundOutlined, HistoryOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 
 const { Sider, Content, Header } = Layout
@@ -52,9 +53,9 @@ const AppLayout = () => {
         width={240}
         theme="dark"
         style={{
-          background: 'linear-gradient(152deg, #0f172a 0%, #101828 48%, #0d224b 100%)',
-          borderRight: '1px solid rgba(15, 23, 42, 0.25)',
-          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.05)',
+          background: 'linear-gradient(160deg, #0b1220 0%, #101c33 100%)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.05)',
+          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.04)',
           position: 'sticky',
           top: 0,
           height: '100vh',
@@ -100,7 +101,7 @@ const AppLayout = () => {
         <Header
           style={{
             background: token.colorBgElevated,
-            padding: '0 32px',
+            padding: '0 48px',
             display: 'flex',
             alignItems: 'center',
             borderBottom: `1px solid ${token.colorSplit}`,
@@ -116,13 +117,21 @@ const AppLayout = () => {
         </Header>
         <Content
           style={{
-            padding: '32px 40px',
+            padding: '32px 0 48px',
             background: token.colorBgLayout,
             overflowY: 'auto',
             flex: 1,
           }}
         >
-          <Outlet />
+          <div
+            style={{
+              maxWidth: 1280,
+              margin: '0 auto',
+              padding: '0 32px',
+            }}
+          >
+            <Outlet />
+          </div>
         </Content>
       </Layout>
     </Layout>

@@ -54,6 +54,7 @@ pub fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             test_logs,
+            audio_capture::get_audio_devices,
             audio_capture::start_audio_capture,
             audio_capture::stop_audio_capture
         ])

@@ -1,47 +1,16 @@
+import { Card, Space, Typography, Alert, Input, Button, theme, Tabs, Switch, Select } from 'antd'
 import { useState, useEffect } from 'react'
-import { theme, Segmented, Input, Switch, Select, Typography } from 'antd'
 
-// 服务器配置
-export interface ServerConfig {
-  ws_url: string
-  api_key: string
-}
+import { useAsr } from '../context/AppContext'
 
-// ASR 配置类型定义
-export interface GummyConfig {
-  type: 'gummy'
-  server_config: ServerConfig
-  source_language: string
-  language_hints?: string[]
-  translation_enabled: boolean
-  translation_target_languages: string[]
-  vocabulary_id?: string
-  punctuation_prediction_enabled: boolean
-  itn_enabled: boolean
-}
+import type { AsrModelConfig, GummyConfig, ParaformerConfig, ServerConfig } from '../types/asr'
+import type { TabsProps } from 'antd'
 
-export interface ParaformerConfig {
-  type: 'paraformer'
-  server_config: ServerConfig
-  source_language: string
-  language_hints?: string[]
-  vocabulary_id?: string
-  disfluency_removal_enabled: boolean
-  punctuation_prediction_enabled: boolean
-  itn_enabled: boolean
-  dialect?: string
-  emotion_enabled: boolean
-}
-
-export type AsrModelConfig = GummyConfig | ParaformerConfig
-
-// 默认服务器配置
 const DEFAULT_SERVER_CONFIG: ServerConfig = {
   ws_url: 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/',
   api_key: 'sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
 }
 
-// 默认配置
 const DEFAULT_GUMMY_CONFIG: GummyConfig = {
   type: 'gummy',
   server_config: DEFAULT_SERVER_CONFIG,
@@ -72,152 +41,106 @@ const LANGUAGE_OPTIONS = [
   { label: '俄语', value: 'ru' },
 ]
 
-const MODEL_SEGMENT_OPTIONS: { label: string; value: 'gummy' | 'paraformer' }[] = [
-  { label: 'Gummy（支持翻译）', value: 'gummy' },
-  { label: 'Paraformer（高准确率）', value: 'paraformer' },
-]
-
-// LocalStorage 键
 const STORAGE_KEY = 'asr_model_config'
 
-interface AsrConfigProps {
-  onConfigChange: (config: AsrModelConfig) => void
-}
-
-export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
+const ModelConfigPage = () => {
   const { token } = theme.useToken()
   const { Title, Text } = Typography
+  const { setAsrConfig } = useAsr()
+  const isDev = import.meta.env.DEV
+  const [name, setName] = useState<string>('')
+  const [greeting, setGreeting] = useState<string>('')
   const [modelType, setModelType] = useState<'gummy' | 'paraformer'>('gummy')
   const [gummyConfig, setGummyConfig] = useState<GummyConfig>(DEFAULT_GUMMY_CONFIG)
-  const [paraformerConfig, setParaformerConfig] = useState<ParaformerConfig>(DEFAULT_PARAFORMER_CONFIG)
+  const [paraformerConfig, setParaformerConfig] =
+    useState<ParaformerConfig>(DEFAULT_PARAFORMER_CONFIG)
 
-  // 从 localStorage 加载配置
   useEffect(() => {
     try {
       const savedConfig = localStorage.getItem(STORAGE_KEY)
       if (savedConfig) {
-        const config: any = JSON.parse(savedConfig)
-        
-        // 兼容旧版配置：如果没有 server_config，添加默认值
-        if (config.type === 'gummy') {
+        const storedConfig = JSON.parse(savedConfig) as Partial<AsrModelConfig>
+
+        if (storedConfig.type === 'gummy') {
           const gummyConf: GummyConfig = {
             ...DEFAULT_GUMMY_CONFIG,
-            ...config,
-            server_config: config.server_config || DEFAULT_SERVER_CONFIG,
+            ...storedConfig,
+            server_config: storedConfig.server_config || DEFAULT_SERVER_CONFIG,
           }
           setModelType('gummy')
           setGummyConfig(gummyConf)
-          onConfigChange(gummyConf)
-        } else if (config.type === 'paraformer') {
+          setAsrConfig(gummyConf)
+        } else if (storedConfig.type === 'paraformer') {
           const paraformerConf: ParaformerConfig = {
             ...DEFAULT_PARAFORMER_CONFIG,
-            ...config,
-            server_config: config.server_config || DEFAULT_SERVER_CONFIG,
+            ...storedConfig,
+            server_config: storedConfig.server_config || DEFAULT_SERVER_CONFIG,
           }
           setModelType('paraformer')
           setParaformerConfig(paraformerConf)
-          onConfigChange(paraformerConf)
+          setAsrConfig(paraformerConf)
         } else {
-          // 配置格式不正确，使用默认值
           console.warn('配置格式不正确，使用默认配置')
-          onConfigChange(DEFAULT_GUMMY_CONFIG)
+          setAsrConfig(DEFAULT_GUMMY_CONFIG)
         }
       } else {
-        // 首次加载，使用默认配置
-        onConfigChange(DEFAULT_GUMMY_CONFIG)
+        setAsrConfig(DEFAULT_GUMMY_CONFIG)
       }
     } catch (error) {
       console.error('加载配置失败:', error)
-      // 配置加载失败，清除损坏的配置
       localStorage.removeItem(STORAGE_KEY)
-      onConfigChange(DEFAULT_GUMMY_CONFIG)
+      setAsrConfig(DEFAULT_GUMMY_CONFIG)
     }
-  }, [onConfigChange])
+  }, [setAsrConfig])
 
-  // 保存配置到 localStorage 并通知父组件
   const saveConfig = (config: AsrModelConfig) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
-      onConfigChange(config)
+      setAsrConfig(config)
     } catch (error) {
       console.error('保存配置失败:', error)
     }
   }
 
-  // 切换模型类型
   const handleModelTypeChange = (type: 'gummy' | 'paraformer') => {
     setModelType(type)
     const config = type === 'gummy' ? gummyConfig : paraformerConfig
     saveConfig(config)
   }
 
-  // 更新 Gummy 配置
   const updateGummyConfig = (updates: Partial<GummyConfig>) => {
     const newConfig = { ...gummyConfig, ...updates }
     setGummyConfig(newConfig)
     saveConfig(newConfig)
   }
 
-  // 更新 Paraformer 配置
   const updateParaformerConfig = (updates: Partial<ParaformerConfig>) => {
     const newConfig = { ...paraformerConfig, ...updates }
     setParaformerConfig(newConfig)
     saveConfig(newConfig)
   }
 
-  return (
-    <div
-      style={{
-        padding: 24,
-        backgroundColor: token.colorFillTertiary,
-        borderRadius: token.borderRadiusLG,
-        marginBottom: 24,
-      }}
-    >
-      <Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>
-        ASR 模型配置
-      </Title>
+  const handleGreet = () => {
+    setGreeting(`你好，${name}!`)
+  }
 
-      {/* 模型选择 */}
-      <div style={{ marginBottom: 24 }}>
-        <Text style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>选择模型</Text>
-        <Segmented
-          block
-          options={MODEL_SEGMENT_OPTIONS}
-          value={modelType}
-          onChange={(value) => handleModelTypeChange(value as 'gummy' | 'paraformer')}
-        />
-      </div>
-
-      {/* Gummy 配置 */}
-      {modelType === 'gummy' && (
+  const tabItems: TabsProps['items'] = [
+    {
+      key: 'gummy',
+      label: 'Gummy（支持翻译）',
+      children: (
         <div
           style={{
             backgroundColor: token.colorBgContainer,
             padding: 16,
             borderRadius: token.borderRadiusLG,
             border: `1px solid ${token.colorBorderSecondary}`,
-            boxShadow: token.boxShadowSecondary,
           }}
         >
-          <Title level={5} style={{ marginTop: 0 }}>
-            Gummy 模型配置
-          </Title>
-
-          {/* 服务器配置 */}
-          <div
-            style={{
-              marginBottom: 24,
-              padding: 16,
-              backgroundColor: token.colorFillSecondary,
-              borderRadius: token.borderRadius,
-              border: `1px solid ${token.colorBorderSecondary}`,
-            }}
-          >
+          <div style={{ marginBottom: 24 }}>
             <Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>
               服务器配置
             </Title>
-
             <div style={{ marginBottom: 12 }}>
               <Text style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 500 }}>
                 WebSocket URL
@@ -234,7 +157,7 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
               />
             </div>
 
-            <div style={{ marginBottom: 0 }}>
+            <div>
               <Text style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 500 }}>
                 API Key
               </Text>
@@ -251,7 +174,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 源语言 */}
           <div style={{ marginBottom: 16 }}>
             <Text style={{ display: 'block', marginBottom: 4 }}>源语言</Text>
             <Select
@@ -264,7 +186,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             />
           </div>
 
-          {/* 翻译功能 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -275,7 +196,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 翻译目标语言 */}
           {gummyConfig.translation_enabled && (
             <div style={{ marginBottom: 16 }}>
               <Text style={{ display: 'block', marginBottom: 4 }}>翻译目标语言</Text>
@@ -295,7 +215,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           )}
 
-          {/* 标点符号预测 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -308,7 +227,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 逆文本正则化 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -319,7 +237,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 热词ID */}
           <div style={{ marginBottom: 16 }}>
             <Text style={{ display: 'block', marginBottom: 4 }}>热词 ID（可选）</Text>
             <Input
@@ -332,37 +249,24 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             />
           </div>
         </div>
-      )}
-
-      {/* Paraformer 配置 */}
-      {modelType === 'paraformer' && (
+      ),
+    },
+    {
+      key: 'paraformer',
+      label: 'Paraformer（高准确率）',
+      children: (
         <div
           style={{
             backgroundColor: token.colorBgContainer,
             padding: 16,
             borderRadius: token.borderRadiusLG,
             border: `1px solid ${token.colorBorderSecondary}`,
-            boxShadow: token.boxShadowSecondary,
           }}
         >
-          <Title level={5} style={{ marginTop: 0 }}>
-            Paraformer 模型配置
-          </Title>
-
-          {/* 服务器配置 */}
-          <div
-            style={{
-              marginBottom: 24,
-              padding: 16,
-              backgroundColor: token.colorFillSecondary,
-              borderRadius: token.borderRadius,
-              border: `1px solid ${token.colorBorderSecondary}`,
-            }}
-          >
+          <div style={{ marginBottom: 24 }}>
             <Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>
               服务器配置
             </Title>
-
             <div style={{ marginBottom: 12 }}>
               <Text style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 500 }}>
                 WebSocket URL
@@ -371,7 +275,10 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
                 value={paraformerConfig.server_config.ws_url}
                 onChange={(event) =>
                   updateParaformerConfig({
-                    server_config: { ...paraformerConfig.server_config, ws_url: event.target.value },
+                    server_config: {
+                      ...paraformerConfig.server_config,
+                      ws_url: event.target.value,
+                    },
                   })
                 }
                 placeholder="wss://dashscope.aliyuncs.com/api-ws/v1/inference/"
@@ -379,7 +286,7 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
               />
             </div>
 
-            <div style={{ marginBottom: 0 }}>
+            <div>
               <Text style={{ display: 'block', marginBottom: 4, fontSize: 13, fontWeight: 500 }}>
                 API Key
               </Text>
@@ -387,7 +294,10 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
                 value={paraformerConfig.server_config.api_key}
                 onChange={(event) =>
                   updateParaformerConfig({
-                    server_config: { ...paraformerConfig.server_config, api_key: event.target.value },
+                    server_config: {
+                      ...paraformerConfig.server_config,
+                      api_key: event.target.value,
+                    },
                   })
                 }
                 placeholder="sk-xxxxxxxxxxxxxxxx"
@@ -396,7 +306,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 源语言 */}
           <div style={{ marginBottom: 16 }}>
             <Text style={{ display: 'block', marginBottom: 4 }}>源语言</Text>
             <Select
@@ -409,7 +318,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             />
           </div>
 
-          {/* 不流畅词过滤 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -422,7 +330,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 标点符号预测 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -435,7 +342,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 逆文本正则化 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -446,7 +352,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 情感识别 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
@@ -457,7 +362,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             </div>
           </div>
 
-          {/* 方言设置 */}
           <div style={{ marginBottom: 16 }}>
             <Text style={{ display: 'block', marginBottom: 4 }}>方言设置（可选）</Text>
             <Input
@@ -470,7 +374,6 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             />
           </div>
 
-          {/* 热词ID */}
           <div style={{ marginBottom: 16 }}>
             <Text style={{ display: 'block', marginBottom: 4 }}>热词 ID（可选）</Text>
             <Input
@@ -483,8 +386,52 @@ export default function AsrConfig({ onConfigChange }: AsrConfigProps) {
             />
           </div>
         </div>
+      ),
+    },
+  ]
+
+  return (
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      <div
+        style={{
+          padding: 24,
+          backgroundColor: token.colorBgContainer,
+          borderRadius: token.borderRadiusLG,
+          marginBottom: 24,
+          border: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>
+          ASR 模型配置
+        </Title>
+
+        <Tabs
+          activeKey={modelType}
+          onChange={(key) => handleModelTypeChange(key as 'gummy' | 'paraformer')}
+          items={tabItems}
+        />
+      </div>
+
+      {isDev && (
+        <Card title="快速测试" variant="borderless">
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Space size={12} wrap>
+              <Input
+                value={name}
+                placeholder="请输入名字"
+                onChange={(e) => setName(e.target.value)}
+                style={{ minWidth: 220 }}
+              />
+              <Button type="primary" onClick={handleGreet}>
+                调用 Rust
+              </Button>
+            </Space>
+            {greeting && <Alert type="info" showIcon message={<Text>{greeting}</Text>} />}
+          </Space>
+        </Card>
       )}
-    </div>
+    </Space>
   )
 }
 
+export default ModelConfigPage

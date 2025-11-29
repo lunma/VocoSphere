@@ -1,0 +1,20 @@
+# 依赖和构建产物
+node_modules
+dist
+build
+*.min.js
+
+# 配置文件
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Rust 相关
+src-tauri
+target
+Cargo.lock
+
+# 其他
+.DS_Store
+*.log
+.cache

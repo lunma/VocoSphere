@@ -7,8 +7,8 @@ use rubato::{SincFixedIn, SincInterpolationParameters, WindowFunction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tauri::async_runtime;
+use tokio::sync::mpsc;
 
 // 导入 crate 中的其他模块
 use crate::asr;
@@ -18,11 +18,18 @@ use crate::utils;
 // 全局录音状态标志（线程安全，编译时初始化）
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
+/// 获取可用的音频输入设备列表
+#[tauri::command]
+pub fn get_audio_devices() -> Result<Vec<(String, String)>, String> {
+    Ok(audio::get_audio_devices())
+}
+
 /// 启动音频捕获和实时语音识别
-/// 前端可以通过 invoke('start_audio_capture', {config: {...}}) 调用此函数
+/// 前端可以通过 invoke('start_audio_capture', {config: {...}, deviceName: "..."}) 调用此函数
 #[tauri::command]
 pub async fn start_audio_capture(
     config: crate::asr::config::AsrModelConfig,
+    device_name: Option<String>,
 ) -> Result<String, String> {
     // 使用 compare_exchange 原子化地"检查并设置"
     // 如果当前是 false（未在录音），则设置为 true（开始录音）
@@ -34,11 +41,11 @@ pub async fn start_audio_capture(
     ) {
         Ok(_) => {
             // 成功：之前是 false，现在已设置为 true
-            info!("开始音频捕获，配置: {:?}", config);
+            info!("开始音频捕获，配置: {:?}, 设备: {:?}", config, device_name);
 
             // 在后台任务中执行音频捕获
             async_runtime::spawn_blocking(move || {
-                let result = async_runtime::block_on(run_audio_capture(config));
+                let result = async_runtime::block_on(run_audio_capture(config, device_name));
                 match result {
                     Ok(_) => {
                         info!("音频捕获正常结束");
@@ -72,7 +79,7 @@ pub fn stop_audio_capture() -> Result<String, String> {
         info!("停止音频捕获...");
 
         // 注意：音频文件会在 run_audio_capture() 结束时自动保存
-        Ok("音频捕获已停止，正在保存文件...".to_string())
+        Ok("音频捕获已停止".to_string())
     } else {
         // 之前是 false（未在录音）
         Err("音频捕获未运行".to_string())
@@ -80,11 +87,16 @@ pub fn stop_audio_capture() -> Result<String, String> {
 }
 
 /// 音频捕获的实际实现
-async fn run_audio_capture(config: crate::asr::config::AsrModelConfig) -> anyhow::Result<()> {
-    // 日志系统已在 main.rs 中统一初始化，无需重复初始化
-
-    // 查找环回设备（用于捕获音频输出）
-    let device: Device = audio::find_loopback_device().expect("找不到环回设备");
+async fn run_audio_capture(
+    config: crate::asr::config::AsrModelConfig,
+    device_name: Option<String>,
+) -> anyhow::Result<()> {
+    // 根据设备名称查找设备，如果未指定则使用默认环回设备
+    let device: Device = if let Some(name) = device_name {
+        audio::find_device_by_name(&name).ok_or_else(|| anyhow::anyhow!("找不到设备: {}", name))?
+    } else {
+        audio::find_loopback_device().ok_or_else(|| anyhow::anyhow!("找不到环回设备"))?
+    };
     info!("找到设备：{}", device.name()?);
 
     /*

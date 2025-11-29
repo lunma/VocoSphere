@@ -21,7 +21,10 @@ jobs:
           - windows-latest
 
     env:
-      RUSTFLAGS: "-C target-cpu=native" # 优化 Rust 编译产物使用当前 CPU 指令集
+      # 显式设置可以确保在所有场景下都使用生产模式（代码压缩、tree-shaking 等）
+      NODE_ENV: "production"
+      # Rust 编译优化标志：针对当前 CPU 指令集优化
+      RUSTFLAGS: "-C target-cpu=native"
 
     steps:
       - name: Checkout repository
@@ -30,13 +33,13 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.23.0
           run_install: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.21.1
           cache: "pnpm"
 
       - name: Install system dependencies (Linux only)
@@ -55,8 +58,8 @@ jobs:
             libasound2-dev
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@1.84.0
-        # 安装稳定版 Rust（含 cargo、rustup）
+        uses: dtolnay/rust-toolchain@1.91.1
+        # 安装指定版本的 Rust（含 cargo、rustup）
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2.8.0

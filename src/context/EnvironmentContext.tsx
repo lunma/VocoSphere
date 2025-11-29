@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 interface EnvironmentContextValue {
   isTauriEnv: boolean
@@ -19,7 +19,9 @@ export const EnvironmentProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [])
 
-  return <EnvironmentContext.Provider value={{ isTauriEnv }}>{children}</EnvironmentContext.Provider>
+  return (
+    <EnvironmentContext.Provider value={{ isTauriEnv }}>{children}</EnvironmentContext.Provider>
+  )
 }
 
 export const useEnvironment = () => {
@@ -29,4 +31,3 @@ export const useEnvironment = () => {
   }
   return context
 }
-

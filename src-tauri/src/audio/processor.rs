@@ -204,6 +204,60 @@ pub fn find_loopback_device() -> Option<cpal::Device> {
     }
 }
 
+/// 获取所有可用的音频输入设备列表
+pub fn get_audio_devices() -> Vec<(String, String)> {
+    let host = cpal::default_host();
+    let mut devices = Vec::new();
+
+    if let Ok(device_iter) = host.devices() {
+        for device in device_iter {
+            if let Ok(name) = device.name() {
+                // 检查设备是否有输入配置
+                if device.default_input_config().is_ok() {
+                    let device_type = if name.to_lowercase().contains("loopback")
+                        || name.to_lowercase().contains("blackhole")
+                        || name.to_lowercase().contains("virtual")
+                    {
+                        "环回设备"
+                    } else {
+                        "输入设备"
+                    };
+                    devices.push((name.clone(), format!("{} ({})", name, device_type)));
+                }
+            }
+        }
+    }
+
+    // 如果没有找到设备，尝试添加默认设备
+    if devices.is_empty() {
+        if let Some(default_device) = host.default_input_device() {
+            if let Ok(name) = default_device.name() {
+                devices.push((name.clone(), format!("{} (默认)", name)));
+            }
+        }
+    }
+
+    devices
+}
+
+/// 根据设备名称查找设备
+pub fn find_device_by_name(device_name: &str) -> Option<cpal::Device> {
+    let host = cpal::default_host();
+
+    if let Ok(device_iter) = host.devices() {
+        for device in device_iter {
+            if let Ok(name) = device.name() {
+                if name == device_name {
+                    return Some(device);
+                }
+            }
+        }
+    }
+
+    // 如果找不到，返回默认设备
+    host.default_input_device()
+}
+
 /// 验证重采样后的音频数据
 /// 注意：此函数在音频回调中被调用，应尽可能快速执行
 /// 目前已被禁用以避免性能问题，仅在需要调试时启用

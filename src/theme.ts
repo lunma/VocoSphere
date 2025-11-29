@@ -18,7 +18,7 @@ export const appTheme: ThemeConfig = {
     Layout: {
       bodyBg: '#f5f7fb',
       headerBg: '#ffffff',
-      siderBg: '#0f172a',
+      siderBg: '#0d1526',
       headerPadding: '0 32px',
     },
     Menu: {
@@ -33,7 +33,14 @@ export const appTheme: ThemeConfig = {
     },
     Card: {
       colorBorderSecondary: '#e5eaf3',
+      paddingLG: 20,
+    },
+    Tabs: {
+      inkBarColor: '#1664ff',
+      itemHoverColor: '#1664ff',
+      itemActiveColor: '#1664ff',
+      itemSelectedColor: '#1664ff',
+      itemColor: '#5e6573',
     },
   },
 }
-

@@ -1,3 +1,6 @@
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { message } from 'antd'
 import {
   createContext,
   useCallback,
@@ -9,9 +12,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
-import { message } from 'antd'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+
 import { useEnvironment } from './EnvironmentContext'
 
 export interface LogMessage {
@@ -26,13 +27,9 @@ interface LogsContextValue {
   clearLogs: () => void
   autoScroll: boolean
   setAutoScroll: (value: boolean) => void
-  showLogs: boolean
-  setShowLogs: (value: boolean) => void
   scrollToBottom: (smooth: boolean) => void
   logsContainerRef: RefObject<HTMLDivElement>
   logsEndRef: RefObject<HTMLDivElement>
-  handleLogsScroll: () => void
-  markUserScrolling: () => void
   getLogColor: (level: string) => string
   getLogBgColor: (level: string) => string
   handleTestLogs: () => Promise<void>
@@ -44,13 +41,9 @@ export const LogsProvider = ({ children }: { children: ReactNode }) => {
   const { isTauriEnv } = useEnvironment()
   const [logs, setLogs] = useState<LogMessage[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
-  const [showLogs, setShowLogs] = useState(true)
 
   const logsEndRef = useRef<HTMLDivElement>(null)
   const logsContainerRef = useRef<HTMLDivElement>(null)
-  const isAutoScrollingRef = useRef(false)
-  const isUserScrollingRef = useRef(false)
-  const userScrollTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!isTauriEnv) {
@@ -82,66 +75,22 @@ export const LogsProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isTauriEnv])
 
-  useEffect(
-    () => () => {
-      if (userScrollTimeoutRef.current) {
-        window.clearTimeout(userScrollTimeoutRef.current)
-      }
-    },
-    []
-  )
+  const scrollToBottom = useCallback((smooth: boolean) => {
+    const container = logsContainerRef.current
+    if (!container) return
 
-  const scrollToBottom = useCallback(
-    (smooth: boolean) => {
-      const container = logsContainerRef.current
-      if (!container) return
+    const behavior: ScrollBehavior = smooth ? 'smooth' : 'auto'
 
-      isAutoScrollingRef.current = true
-      const behavior: ScrollBehavior = smooth ? 'smooth' : 'auto'
-
-      requestAnimationFrame(() => {
-        container.scrollTo({ top: container.scrollHeight, behavior })
-        requestAnimationFrame(() => {
-          isAutoScrollingRef.current = false
-        })
-      })
-    },
-    []
-  )
+    requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior })
+    })
+  }, [])
 
   useEffect(() => {
-    if (autoScroll && showLogs && logs.length > 0) {
+    if (autoScroll && logs.length > 0) {
       scrollToBottom(true)
     }
-  }, [logs, autoScroll, showLogs, scrollToBottom])
-
-  const handleLogsScroll = () => {
-    if (!logsContainerRef.current) return
-    const { scrollTop, clientHeight, scrollHeight } = logsContainerRef.current
-    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10
-
-    if (isAutoScrollingRef.current) {
-      return
-    }
-
-    if (!isUserScrollingRef.current) {
-      return
-    }
-
-    if (autoScroll && !isAtBottom) {
-      setAutoScroll(false)
-    }
-  }
-
-  const markUserScrolling = () => {
-    isUserScrollingRef.current = true
-    if (userScrollTimeoutRef.current) {
-      window.clearTimeout(userScrollTimeoutRef.current)
-    }
-    userScrollTimeoutRef.current = window.setTimeout(() => {
-      isUserScrollingRef.current = false
-    }, 200)
-  }
+  }, [logs, autoScroll, scrollToBottom])
 
   const clearLogs = useCallback(() => {
     setLogs([])
@@ -193,29 +142,14 @@ export const LogsProvider = ({ children }: { children: ReactNode }) => {
       clearLogs,
       autoScroll,
       setAutoScroll,
-      showLogs,
-      setShowLogs,
       scrollToBottom,
       logsContainerRef,
       logsEndRef,
-      handleLogsScroll,
-      markUserScrolling,
       getLogColor,
       getLogBgColor,
       handleTestLogs,
     }),
-    [
-      logs,
-      clearLogs,
-      autoScroll,
-      showLogs,
-      scrollToBottom,
-      handleLogsScroll,
-      markUserScrolling,
-      getLogColor,
-      getLogBgColor,
-      handleTestLogs,
-    ]
+    [logs, clearLogs, autoScroll, scrollToBottom, getLogColor, getLogBgColor, handleTestLogs]
   )
 
   return <LogsContext.Provider value={value}>{children}</LogsContext.Provider>
@@ -228,4 +162,3 @@ export const useLogs = () => {
   }
   return context
 }
-

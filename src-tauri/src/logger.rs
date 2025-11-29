@@ -106,15 +106,13 @@ static LOGGER_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 /// 初始化日志系统
 pub fn init_logger() {
-    LOGGER_INITIALIZED.get_or_init(|| {
-        match log::set_logger(&LOGGER) {
-            Ok(_) => {
-                log::set_max_level(LevelFilter::Debug);
-                println!("✅ 自定义 Tauri 日志器已注册");
-            }
-            Err(err) => {
-                eprintln!("❌ 设置日志处理器失败: {:?}", err);
-            }
+    LOGGER_INITIALIZED.get_or_init(|| match log::set_logger(&LOGGER) {
+        Ok(_) => {
+            log::set_max_level(LevelFilter::Debug);
+            println!("✅ 自定义 Tauri 日志器已注册");
+        }
+        Err(err) => {
+            eprintln!("❌ 设置日志处理器失败: {:?}", err);
         }
     });
 }

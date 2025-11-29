@@ -1,0 +1,37 @@
+[tools]
+node = "22.21.1"
+pnpm = "10.23.0"
+rust = "1.91.1"
+
+
+[env]
+# NODE_ENV - Node.js 环境标识
+# Vite 会根据此变量自动优化构建：
+#   - "development": 启用热更新、详细错误信息等
+#   - "production": 启用代码压缩、tree-shaking 等
+NODE_ENV = "development"
+
+
+[tasks]
+# 开发任务
+dev = "pnpm tauri dev"
+build = "pnpm tauri build"
+
+# 代码质量检查
+lint = "pnpm lint"
+"lint:fix" = "pnpm lint:fix"
+format = "pnpm format"
+"format:check" = "pnpm format:check"
+
+# 代码质量一站式检查
+qa = "pnpm format:check && pnpm lint"
+
+# 清理构建产物
+clean = [
+    "rm -rf dist",
+    "rm -rf src-tauri/target",
+]
+
+# 项目诊断
+diagnose = "bash bin/diagnose.sh"
+

@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import {
   createContext,
   useCallback,
@@ -7,10 +9,10 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import type { AsrModelConfig } from '../components/AsrConfig'
+
 import { useEnvironment } from './EnvironmentContext'
+
+import type { AsrModelConfig } from '../types/asr'
 
 export interface AsrResultMessage {
   sentence_id: number
@@ -22,11 +24,20 @@ export interface AsrResultMessage {
   lang?: string | null
 }
 
+export interface AudioDevice {
+  name: string
+  label: string
+}
+
 interface AsrContextValue {
   asrConfig: AsrModelConfig | null
   setAsrConfig: (config: AsrModelConfig | null) => void
   isCapturing: boolean
   audioStatus: string
+  audioDevices: AudioDevice[]
+  selectedDevice: string | null
+  setSelectedDevice: (device: string | null) => void
+  refreshAudioDevices: () => Promise<void>
   handleStartAudioCapture: () => Promise<void>
   handleStopAudioCapture: () => Promise<void>
   asrResults: AsrResultMessage[]
@@ -42,6 +53,38 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
   const [isCapturing, setIsCapturing] = useState(false)
   const [audioStatus, setAudioStatus] = useState('')
   const [asrResults, setAsrResults] = useState<AsrResultMessage[]>([])
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([])
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(null)
+
+  // 获取音频设备列表
+  const refreshAudioDevices = useCallback(async () => {
+    if (!isTauriEnv) {
+      return
+    }
+
+    try {
+      const devices = await invoke<[string, string][]>('get_audio_devices')
+      const deviceList: AudioDevice[] = devices.map(([name, label]) => ({
+        name,
+        label,
+      }))
+      setAudioDevices(deviceList)
+
+      // 如果没有选中设备且设备列表不为空，默认选择第一个
+      if (!selectedDevice && deviceList.length > 0) {
+        setSelectedDevice(deviceList[0].name)
+      }
+    } catch (error) {
+      console.error('获取音频设备列表失败:', error)
+    }
+  }, [isTauriEnv, selectedDevice])
+
+  // 初始化时获取设备列表
+  useEffect(() => {
+    if (isTauriEnv) {
+      refreshAudioDevices()
+    }
+  }, [isTauriEnv, refreshAudioDevices])
 
   useEffect(() => {
     if (!isTauriEnv) {
@@ -77,17 +120,15 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
               nextResults = [...prevResults, normalized]
             }
 
-            return nextResults
-              .slice()
-              .sort((a, b) => {
-                if (a.begin_time !== b.begin_time) {
-                  return a.begin_time - b.begin_time
-                }
-                if (a.sentence_id !== b.sentence_id) {
-                  return a.sentence_id - b.sentence_id
-                }
-                return (a.lang ?? '').localeCompare(b.lang ?? '')
-              })
+            return nextResults.slice().sort((a, b) => {
+              if (a.begin_time !== b.begin_time) {
+                return a.begin_time - b.begin_time
+              }
+              if (a.sentence_id !== b.sentence_id) {
+                return a.sentence_id - b.sentence_id
+              }
+              return (a.lang ?? '').localeCompare(b.lang ?? '')
+            })
           })
         })
       } catch (error) {
@@ -112,14 +153,17 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setAudioStatus('正在启动音频捕获...')
-      const result = await invoke<string>('start_audio_capture', { config: asrConfig })
+      const result = await invoke<string>('start_audio_capture', {
+        config: asrConfig,
+        deviceName: selectedDevice,
+      })
       setIsCapturing(true)
       setAudioStatus(result + ' - 点击停止按钮结束捕获')
     } catch (error) {
       setAudioStatus(`错误: ${error}`)
       setIsCapturing(false)
     }
-  }, [asrConfig])
+  }, [asrConfig, selectedDevice])
 
   const handleStopAudioCapture = useCallback(async () => {
     try {
@@ -151,6 +195,10 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
       setAsrConfig,
       isCapturing,
       audioStatus,
+      audioDevices,
+      selectedDevice,
+      setSelectedDevice,
+      refreshAudioDevices,
       handleStartAudioCapture,
       handleStopAudioCapture,
       asrResults,
@@ -161,6 +209,9 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
       asrConfig,
       isCapturing,
       audioStatus,
+      audioDevices,
+      selectedDevice,
+      refreshAudioDevices,
       handleStartAudioCapture,
       handleStopAudioCapture,
       asrResults,
@@ -179,4 +230,3 @@ export const useAsr = () => {
   }
   return context
 }
-
