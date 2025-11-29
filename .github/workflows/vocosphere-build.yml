@@ -1,9 +1,11 @@
-name: Tauri Build # GitHub Actions 工作流名称：Tauri 应用编译
+name: VocoSphere Build # GitHub Actions 工作流名称：Tauri 应用编译
 
 on:
-  # 触发条件：推送 / PR 到 main 分支，或手动触发
+  # 触发条件：推送 / PR 到 main 分支，或手动触发，或推送 tag 时创建 Release
   push:
     branches: [main]
+    tags:
+      - 'v*' # 匹配 v 开头的版本标签，如 v1.0.0
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -96,4 +98,66 @@ jobs:
           path: src-tauri/target/release/bundle/**
           if-no-files-found: warn
         # 将各平台的打包产物上传为构建工件，便于下载测试
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build
+    # 仅在推送 tag 时创建 Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write # 需要写入权限来创建 Release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          pattern: vocosphere-bundle-*
+          merge-multiple: false
+
+      - name: Determine release type
+        id: release-type
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [[ "$TAG_NAME" == *"-draft"* ]]; then
+            echo "is_draft=true" >> $GITHUB_OUTPUT
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "release_type=草稿" >> $GITHUB_OUTPUT
+          elif [[ "$TAG_NAME" == *"-alpha"* ]] || [[ "$TAG_NAME" == *"-beta"* ]] || [[ "$TAG_NAME" == *"-rc"* ]]; then
+            echo "is_draft=false" >> $GITHUB_OUTPUT
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "release_type=预发布" >> $GITHUB_OUTPUT
+          else
+            echo "is_draft=false" >> $GITHUB_OUTPUT
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            echo "release_type=正式发布" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## 🎉 Release ${{ github.ref_name }} (${{ steps.release-type.outputs.release_type }})
+
+            ### 📦 构建产物
+
+            本次发布包含以下平台的构建产物：
+            - **macOS** (.dmg / .app)
+            - **Linux** (.deb / .AppImage)
+            - **Windows** (.msi / .exe)
+
+            ### 📝 变更说明
+            - 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})
+          files: |
+            artifacts/**/*
+          draft: ${{ steps.release-type.outputs.is_draft }}
+          prerelease: ${{ steps.release-type.outputs.is_prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
