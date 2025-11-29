@@ -179,7 +179,12 @@ jobs:
             ### 📝 变更说明
             - 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})
           files: |
-            artifacts/vocosphere-bundle-*/**
+            artifacts/vocosphere-bundle-*/dmg/*.dmg
+            artifacts/vocosphere-bundle-*/macos/*.app.tar.gz
+            artifacts/vocosphere-bundle-*/nsis/*.exe
+            artifacts/vocosphere-bundle-*/msi/*.msi
+            artifacts/vocosphere-bundle-*/deb/*.deb
+            artifacts/vocosphere-bundle-*/appimage/*.AppImage
           draft: ${{ steps.release-type.outputs.is_draft }}
           prerelease: ${{ steps.release-type.outputs.is_prerelease }}
         env:

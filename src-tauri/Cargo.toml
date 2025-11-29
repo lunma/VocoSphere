@@ -34,10 +34,16 @@ tokio-rustls = "0.26.0"
 uuid = { version = "1.17.0",features = ["v4"] }
 chrono = "0.4" # 时间处理（用于日志时间戳）
 
+
+
+
 [profile.release]
 panic = "abort"             # 发生 panic 时直接终止，提高性能，减小体积
 codegen-units = 1           # 仅用一个 codegen 单元，优化最终产物的体积和性能
 lto = true                  # 启用链接时优化（Link Time Optimization），进一步优化代码
 opt-level = "s"             # 优化编译产物体积（适合桌面应用分发）
+strip = true                # 移除调试符号，减小二进制体积
+debug = false               # 不包含调试信息，减小体积
+incremental = false         # 禁用增量编译，提升 release 构建速度
 
 
