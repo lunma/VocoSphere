@@ -11,9 +11,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # 对于 tag 推送：使用统一的组
+  # 对于 tag 推送：使用统一的组，新 tag 会取消旧的构建
   # 对于分支推送：使用独立的组，可以并行
-  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/tags/') && 'tags' || github.ref }}    
+  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/tags/') && 'tags' || github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/tags/') }}  # tag 推送时取消旧的构建
 jobs:
   build:
     name: Build on ${{ matrix.platform }} # 按操作系统矩阵分别构建
@@ -29,8 +30,6 @@ jobs:
     env:
       # 显式设置可以确保在所有场景下都使用生产模式（代码压缩、tree-shaking 等）
       NODE_ENV: "production"
-      # Rust 编译优化标志：针对当前 CPU 指令集优化
-      RUSTFLAGS: "-C target-cpu=native"
 
     steps:
       - name: Checkout repository
@@ -72,7 +71,8 @@ jobs:
         with:
           workspaces: |
             src-tauri -> target
-        # 缓存 Rust 编译产物，加速后续构建
+          cache-on-failure: true  # 即使构建失败也保存缓存，便于调试
+        # 缓存 Rust 编译产物，加速后续构建（不同平台自动使用不同的缓存 key）
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -122,6 +122,26 @@ jobs:
           path: ./artifacts
           pattern: vocosphere-bundle-*
           merge-multiple: false
+
+      - name: List downloaded artifacts
+        run: |
+          echo "📦 下载的构建产物结构："
+          find ./artifacts -type f 2>/dev/null | head -20 || echo "未找到文件"
+          echo ""
+          echo "📁 目录结构："
+          ls -laR ./artifacts 2>/dev/null | head -30 || echo "目录为空"
+
+      - name: Check artifacts exist
+        id: check-artifacts
+        run: |
+          ARTIFACT_COUNT=$(find ./artifacts -type f 2>/dev/null | wc -l || echo "0")
+          echo "找到 $ARTIFACT_COUNT 个文件"
+          if [ "$ARTIFACT_COUNT" -eq "0" ]; then
+            echo "❌ 错误：未找到任何构建产物！"
+            echo "请检查构建是否成功，或 artifacts 上传是否正确。"
+            exit 1
+          fi
+          echo "✅ 找到构建产物，继续创建 Release"
 
       - name: Determine release type
         id: release-type
