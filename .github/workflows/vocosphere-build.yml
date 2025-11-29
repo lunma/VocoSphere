@@ -123,6 +123,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取所有历史记录，包括所有 tags
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -150,6 +152,21 @@ jobs:
             exit 1
           fi
           echo "✅ 找到构建产物，继续创建 Release"
+
+      - name: Get previous tag
+        id: previous-tag
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          # 获取所有 tag，按版本号排序，找到当前 tag 的上一个
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -A 1 "^${CURRENT_TAG}$" | tail -1 || echo "")
+          if [ -z "$PREVIOUS_TAG" ] || [ "$PREVIOUS_TAG" = "$CURRENT_TAG" ]; then
+            # 如果没有找到上一个 tag，使用 main 分支
+            echo "compare_url=https://github.com/${{ github.repository }}/compare/main...${CURRENT_TAG}" >> $GITHUB_OUTPUT
+            echo "compare_text=main...${CURRENT_TAG}" >> $GITHUB_OUTPUT
+          else
+            echo "compare_url=https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${CURRENT_TAG}" >> $GITHUB_OUTPUT
+            echo "compare_text=${PREVIOUS_TAG}...${CURRENT_TAG}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Determine release type
         id: release-type
@@ -185,7 +202,7 @@ jobs:
             - **Windows** (.msi / .exe)
 
             ### 📝 变更说明
-            - 查看 [提交历史](https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ github.sha }})
+            - 查看 [提交历史](${{ steps.previous-tag.outputs.compare_url }}) (${{ steps.previous-tag.outputs.compare_text }})
           files: |
             artifacts/vocosphere-bundle-*/dmg/*.dmg
             artifacts/vocosphere-bundle-*/macos/*.app.tar.gz
