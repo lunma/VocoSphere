@@ -78,6 +78,14 @@ jobs:
         run: pnpm install --frozen-lockfile
         # 安装前端依赖，保持 lockfile 一致
 
+      - name: Fix code formatting and line endings
+        run: |
+          # 运行 Prettier 自动修复格式和行尾符
+          pnpm format
+          # 运行 ESLint 自动修复可修复的问题
+          pnpm lint:fix
+        # 这会修复行尾符和其他格式问题，确保代码符合规范
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5.13
         # env:
