@@ -3,6 +3,7 @@ use crate::audio::config::{AudioConfig, RecordingState, VolumeStats};
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::Sample;
 use rubato::Resampler;
+use serde::Serialize;
 
 // 在重采样后对样本进行音量调整
 fn apply_gain(samples: &[f32], gain: f32) -> Vec<f32> {
@@ -160,48 +161,129 @@ fn mix_to_mono(channels: &[Vec<f32>]) -> Vec<f32> {
     mono
 }
 
-pub fn find_loopback_device() -> Option<cpal::Device> {
-    let host = cpal::default_host();
+/// 音频设备错误信息（结构化错误，便于前端显示）
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceError {
+    pub error_type: String,  // "LOOPBACK_DEVICE_NOT_FOUND"
+    pub platform: String,    // "windows" | "linux" | "macos"
+    pub message: String,      // 简短的错误消息
+}
+
+impl DeviceError {
+    pub fn loopback_not_found() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            Self {
+                error_type: "LOOPBACK_DEVICE_NOT_FOUND".to_string(),
+                platform: "windows".to_string(),
+                message: "找不到系统音频捕获设备".to_string(),
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Self {
+                error_type: "LOOPBACK_DEVICE_NOT_FOUND".to_string(),
+                platform: "linux".to_string(),
+                message: "找不到系统音频捕获设备".to_string(),
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            Self {
+                error_type: "LOOPBACK_DEVICE_NOT_FOUND".to_string(),
+                platform: "macos".to_string(),
+                message: "找不到系统音频捕获设备".to_string(),
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            Self {
+                error_type: "LOOPBACK_DEVICE_NOT_FOUND".to_string(),
+                platform: "unknown".to_string(),
+                message: "找不到系统音频捕获设备".to_string(),
+            }
+        }
+    }
+}
+
+/// 检查设备是否是环回设备（用于系统音频捕获）
+/// 返回优先级：数字越小优先级越高
+fn is_loopback_device(device: &cpal::Device) -> Option<u8> {
+    let name = device.name().ok()?;
+    let name_lower = name.to_lowercase();
+    
+    // 验证设备是否支持输入配置
+    if device.default_input_config().is_err() {
+        return None;
+    }
 
     #[cfg(target_os = "windows")]
     {
-        for device in host.devices().ok()? {
-            if let Ok(name) = device.name() {
-                if name.contains("Loopback") {
-                    return Some(device);
-                }
-            }
+        // Windows 上 WASAPI loopback 设备的优先级匹配
+        if name.contains("Stereo Mix") || name.contains("Wave Out Mix") {
+            return Some(1); // 最高优先级
         }
-        host.default_input_device()
+        if name.contains("What U Hear") {
+            return Some(2);
+        }
+        if name.contains("Loopback") {
+            return Some(3);
+        }
+        if name.contains("VB-Audio Virtual") {
+            return Some(4);
+        }
     }
 
     #[cfg(target_os = "linux")]
     {
-        host.default_input_device()
+        // Linux 上 PulseAudio/PipeWire monitor 源的优先级匹配
+        if name_lower.contains(".monitor") || name_lower.ends_with(" monitor") {
+            return Some(1); // 最高优先级：标准 monitor 设备
+        }
+        if name_lower.contains("monitor") && !name_lower.contains("output") {
+            return Some(2); // 次优先级：包含 monitor 但不包含 output
+        }
     }
 
     #[cfg(target_os = "macos")]
     {
-        // 在 macOS 上查找 BlackHole 或其他虚拟音频设备作为环回设备
-        for device in host.devices().ok()? {
-            if let Ok(name) = device.name() {
-                if name.to_lowercase().contains("blackhole")
-                    || name.contains("Loopback")
-                    || name.contains("Virtual")
-                {
-                    return Some(device);
-                }
-            }
+        // macOS 上虚拟音频设备的优先级匹配
+        if name_lower.contains("blackhole") {
+            return Some(1); // 最高优先级：BlackHole
         }
-
-        // 如果没有找到专门的环回设备，则使用默认输入设备
-        host.default_input_device()
+        if name_lower.contains("loopback") && !name_lower.contains("blackhole") {
+            return Some(2); // 次优先级：Loopback（商业软件）
+        }
+        if name_lower.contains("virtual") 
+            && !name_lower.contains("mic")
+            && !name_lower.contains("microphone")
+        {
+            return Some(3); // 备选：其他虚拟设备（排除虚拟麦克风）
+        }
     }
 
-    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-    {
-        host.default_input_device()
+    None
+}
+
+pub fn find_loopback_device() -> Result<cpal::Device, DeviceError> {
+    let host = cpal::default_host();
+
+    let mut candidates: Vec<(cpal::Device, u8)> = Vec::new();
+
+    for device in host.devices().map_err(|_| DeviceError::loopback_not_found())? {
+        if let Some(priority) = is_loopback_device(&device) {
+            candidates.push((device, priority));
+        }
     }
+
+    // 按优先级排序，返回优先级最高的设备
+    candidates.sort_by_key(|(_, priority)| *priority);
+    
+    candidates
+        .into_iter()
+        .next()
+        .map(|(device, _)| device)
+        .ok_or_else(|| DeviceError::loopback_not_found())
 }
 
 /// 获取所有可用的音频输入设备列表
@@ -212,17 +294,15 @@ pub fn get_audio_devices() -> Vec<(String, String)> {
     if let Ok(device_iter) = host.devices() {
         for device in device_iter {
             if let Ok(name) = device.name() {
-                // 检查设备是否有输入配置
-                if device.default_input_config().is_ok() {
-                    let device_type = if name.to_lowercase().contains("loopback")
-                        || name.to_lowercase().contains("blackhole")
-                        || name.to_lowercase().contains("virtual")
-                    {
-                        "环回设备"
-                    } else {
-                        "输入设备"
-                    };
-                    devices.push((name.clone(), format!("{} ({})", name, device_type)));
+                // is_loopback_device 内部已经检查了 default_input_config
+                // 如果返回 Some，说明设备支持输入且是环回设备
+                // 如果返回 None，可能是普通输入设备或不是输入设备
+                if let Some(_priority) = is_loopback_device(&device) {
+                    // 环回设备
+                    devices.push((name.clone(), format!("{} (环回设备)", name)));
+                } else if device.default_input_config().is_ok() {
+                    // 普通输入设备（非环回）
+                    devices.push((name.clone(), format!("{} (输入设备)", name)));
                 }
             }
         }
@@ -232,7 +312,16 @@ pub fn get_audio_devices() -> Vec<(String, String)> {
     if devices.is_empty() {
         if let Some(default_device) = host.default_input_device() {
             if let Ok(name) = default_device.name() {
-                devices.push((name.clone(), format!("{} (默认)", name)));
+                // 验证默认设备是否支持输入配置
+                if default_device.default_input_config().is_ok() {
+                    // 判断默认设备类型
+                    let device_type = if is_loopback_device(&default_device).is_some() {
+                        "环回设备"
+                    } else {
+                        "输入设备"
+                    };
+                    devices.push((name.clone(), format!("{} (默认 {})", name, device_type)));
+                }
             }
         }
     }
@@ -248,14 +337,16 @@ pub fn find_device_by_name(device_name: &str) -> Option<cpal::Device> {
         for device in device_iter {
             if let Ok(name) = device.name() {
                 if name == device_name {
-                    return Some(device);
+                    // 验证设备是否支持输入配置
+                    if device.default_input_config().is_ok() {
+                        return Some(device);
+                    }
                 }
             }
         }
     }
-
-    // 如果找不到，返回默认设备
-    host.default_input_device()
+    // 如果找不到，不返回默认设备（因为默认设备可能是麦克风，不是用户指定的设备）
+    None
 }
 
 /// 验证重采样后的音频数据

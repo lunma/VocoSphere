@@ -95,7 +95,13 @@ async fn run_audio_capture(
     let device: Device = if let Some(name) = device_name {
         audio::find_device_by_name(&name).ok_or_else(|| anyhow::anyhow!("找不到设备: {}", name))?
     } else {
-        audio::find_loopback_device().ok_or_else(|| anyhow::anyhow!("找不到环回设备"))?
+        audio::find_loopback_device().map_err(|e| {
+            // 将结构化错误转换为 JSON 字符串，前端可以解析
+            anyhow::anyhow!(
+                "{}",
+                serde_json::to_string(&e).unwrap_or_else(|_| e.message.clone())
+            )
+        })?
     };
     info!("找到设备：{}", device.name()?);
 

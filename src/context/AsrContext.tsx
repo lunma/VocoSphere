@@ -29,6 +29,12 @@ export interface AudioDevice {
   label: string
 }
 
+export interface DeviceError {
+  error_type: string
+  platform: string
+  message: string
+}
+
 interface AsrContextValue {
   asrConfig: AsrModelConfig | null
   setAsrConfig: (config: AsrModelConfig | null) => void
@@ -145,6 +151,34 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [isTauriEnv])
 
+  // 根据平台返回设备未找到的详细提示信息
+  const getDeviceNotFoundMessage = useCallback((platform: string): string => {
+    switch (platform) {
+      case 'windows':
+        return `找不到系统音频捕获设备。
+请确保已启用"立体声混音"(Stereo Mix)或"Wave Out Mix"设备：
+1. 右键点击系统托盘的声音图标
+2. 选择"声音设置" -> "声音控制面板"
+3. 在"录制"标签页中启用并设置为默认设备`
+
+      case 'linux':
+        return `找不到系统音频捕获设备。
+请确保 PulseAudio 已安装并运行，
+或者使用 'pactl list sources' 查看可用的 monitor 源`
+
+      case 'macos':
+        return `找不到系统音频捕获设备。
+请安装 BlackHole 虚拟音频驱动：
+1. 访问 https://github.com/ExistentialAudio/BlackHole
+2. 下载并安装 BlackHole
+3. 在系统设置中配置音频输出到 BlackHole
+4. 刷新设备列表后选择 BlackHole 设备`
+
+      default:
+        return '找不到系统音频捕获设备'
+    }
+  }, [])
+
   const handleStartAudioCapture = useCallback(async () => {
     try {
       if (!asrConfig) {
@@ -159,11 +193,23 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
       })
       setIsCapturing(true)
       setAudioStatus(result + ' - 点击停止按钮结束捕获')
-    } catch (error) {
-      setAudioStatus(`错误: ${error}`)
+    } catch (error: unknown) {
+      // 尝试解析结构化错误
+      let errorMessage = String(error)
+
+      try {
+        const deviceError: DeviceError = JSON.parse(errorMessage)
+        if (deviceError.error_type === 'LOOPBACK_DEVICE_NOT_FOUND') {
+          errorMessage = getDeviceNotFoundMessage(deviceError.platform)
+        }
+      } catch {
+        // 如果不是结构化错误，使用原始错误消息
+      }
+
+      setAudioStatus(`错误: ${errorMessage}`)
       setIsCapturing(false)
     }
-  }, [asrConfig, selectedDevice])
+  }, [asrConfig, selectedDevice, getDeviceNotFoundMessage])
 
   const handleStopAudioCapture = useCallback(async () => {
     try {

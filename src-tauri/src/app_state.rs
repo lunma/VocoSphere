@@ -10,6 +10,7 @@ pub fn set_app_handle(handle: AppHandle) {
 }
 
 /// 获取 AppHandle 副本
+#[allow(dead_code)]
 pub fn get_app_handle() -> Option<AppHandle> {
     APP_HANDLE.get().cloned()
 }
