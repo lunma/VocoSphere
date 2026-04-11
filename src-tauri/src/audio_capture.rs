@@ -20,7 +20,7 @@ static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
 /// 获取可用的音频输入设备列表
 #[tauri::command]
-pub fn get_audio_devices() -> Result<Vec<(String, String)>, String> {
+pub fn get_audio_devices() -> Result<Vec<audio::AudioDevice>, String> {
     Ok(audio::get_audio_devices())
 }
 

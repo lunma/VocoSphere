@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { message } from 'antd'
+import { toast } from 'sonner'
 import {
   createContext,
   useCallback,
@@ -99,10 +99,10 @@ export const LogsProvider = ({ children }: { children: ReactNode }) => {
   const handleTestLogs = useCallback(async () => {
     try {
       await invoke<string>('test_logs')
-      message.success('已发送测试日志')
+      toast.success('已发送测试日志')
     } catch (error) {
       console.error('测试日志失败:', error)
-      message.error('测试日志失败')
+      toast.error('测试日志失败')
     }
   }, [])
 

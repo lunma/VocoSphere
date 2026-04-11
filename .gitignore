@@ -26,3 +26,6 @@ Thumbs.db
 
 # pnpm store
 .pnpm-store/
+.pnpm-cache/
+
+.claude

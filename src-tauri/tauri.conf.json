@@ -12,12 +12,28 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "VocoSphere",
         "width": 1280,
         "height": 832,
         "minWidth": 1024,
         "minHeight": 720,
         "center": true
+      },
+      {
+        "label": "subtitle-overlay",
+        "title": "VocoSphere Subtitle",
+        "url": "subtitle-overlay.html",
+        "width": 600,
+        "height": 80,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": true,
+        "focus": false,
+        "visible": false
       }
     ],
     "security": {

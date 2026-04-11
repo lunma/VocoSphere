@@ -3,7 +3,15 @@ use crate::audio::config::{AudioConfig, RecordingState, VolumeStats};
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::Sample;
 use rubato::Resampler;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AudioDevice {
+    pub name: String,
+    /// "microphone" | "loopback"
+    pub device_type: String,
+    pub is_default: bool,
+}
 
 // 在重采样后对样本进行音量调整
 fn apply_gain(samples: &[f32], gain: f32) -> Vec<f32> {
@@ -287,46 +295,73 @@ pub fn find_loopback_device() -> Result<cpal::Device, DeviceError> {
 }
 
 /// 获取所有可用的音频输入设备列表
-pub fn get_audio_devices() -> Vec<(String, String)> {
+pub fn get_audio_devices() -> Vec<AudioDevice> {
     let host = cpal::default_host();
-    let mut devices = Vec::new();
+    let mut device_list: Vec<AudioDevice> = Vec::new();
 
-    if let Ok(device_iter) = host.devices() {
-        for device in device_iter {
+    let default_in_name = host
+        .default_input_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_default();
+
+    #[cfg(target_os = "windows")]
+    let default_out_name = host
+        .default_output_device()
+        .and_then(|d| d.name().ok())
+        .unwrap_or_default();
+
+    // 第一步：扫描所有 Input 设备
+    // 覆盖范围：
+    //   macOS  → 麦克风 + BlackHole Input 端 / Soundflower
+    //   Windows → 麦克风 + VB-Cable 等虚拟声卡的 Input 端
+    //   Linux  → 麦克风 + PulseAudio/PipeWire 的 .monitor 设备
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
             if let Ok(name) = device.name() {
-                // is_loopback_device 内部已经检查了 default_input_config
-                // 如果返回 Some，说明设备支持输入且是环回设备
-                // 如果返回 None，可能是普通输入设备或不是输入设备
-                if let Some(_priority) = is_loopback_device(&device) {
-                    // 环回设备
-                    devices.push((name.clone(), format!("{} (环回设备)", name)));
-                } else if device.default_input_config().is_ok() {
-                    // 普通输入设备（非环回）
-                    devices.push((name.clone(), format!("{} (输入设备)", name)));
+                let name_lower = name.to_lowercase();
+
+                let device_type = if name.ends_with(".monitor")
+                    || name_lower.contains("blackhole")
+                    || name_lower.contains("soundflower")
+                    || name_lower.contains("vb-cable")
+                    || name_lower.contains("loopback")
+                {
+                    "loopback"
+                } else {
+                    "microphone"
+                };
+
+                device_list.push(AudioDevice {
+                    is_default: name == default_in_name,
+                    name,
+                    device_type: device_type.to_string(),
+                });
+            }
+        }
+    }
+
+    // 第二步：仅 Windows 需要额外扫描 Output 设备
+    // 注意：最终采集是通过输入流实现，因此这里也验证默认输入配置可用
+    #[cfg(target_os = "windows")]
+    if let Ok(devices) = host.output_devices() {
+        for device in devices {
+            if let Ok(name) = device.name() {
+                // 去重：防止 VB-Cable 等虚拟声卡在 Input 和 Output 列表中都出现
+                if !device_list.iter().any(|d| d.name == name) {
+                    // 只有能作为输入流使用的设备才加入列表（避免 UI 选了但无法启动）
+                    if device.default_input_config().is_ok() {
+                        device_list.push(AudioDevice {
+                            is_default: name == default_out_name,
+                            name,
+                            device_type: "loopback".to_string(),
+                        });
+                    }
                 }
             }
         }
     }
 
-    // 如果没有找到设备，尝试添加默认设备
-    if devices.is_empty() {
-        if let Some(default_device) = host.default_input_device() {
-            if let Ok(name) = default_device.name() {
-                // 验证默认设备是否支持输入配置
-                if default_device.default_input_config().is_ok() {
-                    // 判断默认设备类型
-                    let device_type = if is_loopback_device(&default_device).is_some() {
-                        "环回设备"
-                    } else {
-                        "输入设备"
-                    };
-                    devices.push((name.clone(), format!("{} (默认 {})", name, device_type)));
-                }
-            }
-        }
-    }
-
-    devices
+    device_list
 }
 
 /// 根据设备名称查找设备

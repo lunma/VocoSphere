@@ -26,7 +26,9 @@ export interface AsrResultMessage {
 
 export interface AudioDevice {
   name: string
-  label: string
+  /// "microphone" | "loopback"
+  device_type: 'microphone' | 'loopback'
+  is_default: boolean
 }
 
 export interface DeviceError {
@@ -69,16 +71,23 @@ export const AsrProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      const devices = await invoke<[string, string][]>('get_audio_devices')
-      const deviceList: AudioDevice[] = devices.map(([name, label]) => ({
-        name,
-        label,
-      }))
+      const deviceList = await invoke<AudioDevice[]>('get_audio_devices')
       setAudioDevices(deviceList)
 
-      // 如果没有选中设备且设备列表不为空，默认选择第一个
+      // 如果没有选中设备且设备列表不为空，优先选择 is_default=true 的设备
       if (!selectedDevice && deviceList.length > 0) {
-        setSelectedDevice(deviceList[0].name)
+        const defaultDevice = deviceList.find((d) => d.is_default) ?? deviceList[0]
+        setSelectedDevice(defaultDevice.name)
+      }
+
+      // 如果当前 selectedDevice 不在新列表里，则回退到默认设备
+      if (
+        selectedDevice &&
+        deviceList.length > 0 &&
+        !deviceList.some((d) => d.name === selectedDevice)
+      ) {
+        const defaultDevice = deviceList.find((d) => d.is_default) ?? deviceList[0]
+        setSelectedDevice(defaultDevice.name)
       }
     } catch (error) {
       console.error('获取音频设备列表失败:', error)

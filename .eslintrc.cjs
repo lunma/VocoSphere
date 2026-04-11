@@ -27,6 +27,12 @@ module.exports = {
     react: {
       version: 'detect', // 自动检测 React 版本
     },
+    'import/resolver': {
+      // 让 eslint-plugin-import 能识别 tsconfig 里的 `baseUrl/paths`（例如 `@/*`）
+      typescript: {
+        project: './tsconfig.json',
+      },
+    },
   },
 
   // 启用的插件列表

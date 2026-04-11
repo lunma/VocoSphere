@@ -2,6 +2,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // 声明项目模块
+use tauri::window::Color;
+use tauri::Manager;
+// macOS：字幕悬浮窗专用 NSPanel 类型
+// NonactivatingPanel + 不可成为 key window，确保字幕层不抢夺焦点
+#[cfg(target_os = "macos")]
+tauri_nspanel::tauri_panel! {
+    SubtitlePanel {
+        config: {
+            can_become_key_window: false,
+            is_floating_panel: true
+        }
+    }
+}
+
 mod app_state;
 mod asr; // ASR（自动语音识别）模块
 mod audio; // 音频处理模块
@@ -31,7 +45,6 @@ fn test_logs() -> String {
     log::warn!("这是一条 WARN 级别的日志");
     log::error!("这是一条 ERROR 级别的日志");
 
-    // 模拟一些实际场景的日志
     log::info!("正在初始化系统...");
     log::debug!("加载配置文件: config.json");
     log::info!("系统初始化完成");
@@ -41,15 +54,20 @@ fn test_logs() -> String {
 }
 
 // 当前仅为桌面端构建
-// #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn main() {
     // 提前初始化日志系统，确保在 Tauri 注册默认日志器之前挂载
     logger::init_logger();
 
-    // 创建默认的 Tauri 应用构建器
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // 注册 shell 插件，用于执行系统命令
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    // macOS：注册 NSPanel 插件（管理 WebviewPanelManager 状态）
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+
+    builder
         // 注册前端可调用的命令处理器
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -65,6 +83,74 @@ pub fn main() {
             // 初始化日志系统
             logger::attach_app_handle(app.handle().clone());
             log::info!("Tauri 应用启动成功");
+
+            // macOS：将字幕悬浮窗转换为 NSPanel
+            #[cfg(target_os = "macos")]
+            {
+                use tauri_nspanel::{CollectionBehavior, PanelLevel, StyleMask, WebviewWindowExt};
+
+                if let Some(subtitle_win) = app.get_webview_window("subtitle-overlay") {
+                    match subtitle_win.to_panel::<SubtitlePanel>() {
+                        Ok(panel) => {
+                            subtitle_win
+                                .set_background_color(Some(Color(0, 0, 0, 0)))
+                                .ok();
+
+                            // Floating level（4）让字幕浮于普通窗口之上
+                            panel.set_level(PanelLevel::Floating.value());
+
+                            // 只保留 NonactivatingPanel，去掉 HUDBackground（灰色毛玻璃底板）
+                            panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+
+                            // CanJoinAllSpaces | Stationary | IgnoresCycle | FullScreenAuxiliary
+                            panel.set_collection_behavior(
+                                CollectionBehavior::new()
+                                    .can_join_all_spaces()
+                                    .stationary()
+                                    .ignores_cycle()
+                                    .full_screen_auxiliary()
+                                    .into(),
+                            );
+
+                            panel.set_hides_on_deactivate(false);
+                            panel.set_becomes_key_only_if_needed(false);
+                            panel.set_has_shadow(false);
+
+                            log::info!(
+                                "字幕悬浮窗已转换为 NSPanel（跨 Space、全屏兼容、完全透明）"
+                            );
+                        }
+                        Err(e) => {
+                            log::error!("字幕窗口转 NSPanel 失败，跳过面板配置: {:?}", e);
+                        }
+                    }
+                }
+            }
+
+            // 非 macOS：初始化字幕窗口背景及悬浮特性
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(subtitle_win) = app.get_webview_window("subtitle-overlay") {
+                    // 1. 设置背景透明
+                    subtitle_win
+                        .set_background_color(Some(Color(0, 0, 0, 0)))
+                        .ok();
+
+                    // 2. 设置窗口置顶（让字幕始终在最上层）
+                    subtitle_win.set_always_on_top(true).ok();
+
+                    // 3. 开启鼠标穿透（让鼠标点击可以穿透字幕窗口，点到后面的网页或应用）
+                    // 注意：开启此功能后，字幕窗口将无法响应鼠标事件。如果你的字幕需要拖拽，请在前端控制或动态切换此状态。
+                    // 前端已经实现
+                    //subtitle_win.set_ignore_cursor_events(true).ok();
+
+                    // 4. 不在任务栏显示（可选，让它更像一个纯粹的挂件）
+                    subtitle_win.set_skip_taskbar(true).ok();
+
+                    log::info!("字幕悬浮窗初始化完成（非 macOS 路径，已开启置顶与穿透）");
+                }
+            }
+
             Ok(())
         })
         // 运行 Tauri 应用，传入自动生成的上下文信息

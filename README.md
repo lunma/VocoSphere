@@ -2,20 +2,24 @@
 
 > Tauri + React + Vite + TypeScript（使用 pnpm）
 
-跨平台桌面应用（Windows / macOS / Linux）。前端 React+Vite，后端 Rust（Tauri v2）。实时语音识别、音频处理与日志管理。
+跨平台桌面应用（Windows / macOS / Linux）。前端 React + Vite，后端 Rust（Tauri v2）。实时语音识别、字幕叠加与日志管理。
 
 ## ✨ 核心功能
 
 - 🎤 **实时语音识别**：WebSocket 接入 Gummy / Paraformer ASR 协议，支持翻译、热词、情感识别
-- 🔊 **音频采集处理**：基于 `cpal + rubato` 的低延迟环回录音与重采样
-- 📼 **识别结果展示**：识别/翻译双视图、时间轴标记、临时/最终结果区分
+- 🔊 **音频采集处理**：基于 `cpal + rubato` 的低延迟环回录音与重采样（支持系统声音 / 麦克风）
+- 📺 **字幕叠加显示**：全局悬浮字幕层，支持 Apple / Netflix / YouTube 三种预设样式，可配置字体、位置、透明度、阴影
+- 📼 **识别结果展示**：识别 + 翻译按句子分组，临时 / 最终结果区分，时间轴标记
 - 📝 **实时日志流**：Rust 日志推送到前端，支持自动滚动、级别过滤（DEBUG/INFO/WARN/ERROR）
 
 ## 🧭 应用界面
 
-- **模型配置页**：ASR 模型配置（本地持久化），支持 Gummy / Paraformer 协议切换
-- **音频捕获页**：音频设备选择、捕获控制，识别结果与翻译结果双 Tab 视图
-- **日志页**：实时日志订阅，自动滚动、级别过滤
+侧边栏可折叠，包含以下四个页面：
+
+- **模型**（`/`）：ASR 模型配置（本地持久化），支持 Gummy / Paraformer 协议切换及参数调整
+- **音频源**（`/audio`）：音频设备选择（系统环回 / 麦克风）、捕获控制、识别结果展示
+- **字幕**（`/subtitle`）：字幕样式、位置、字体、阴影等参数配置
+- **运行日志**（`/logs`）：实时日志订阅，自动滚动、级别过滤
 
 ---
 
@@ -79,21 +83,41 @@ pnpm dev  # ❌ 这只会启动 Vite，没有 Tauri 环境
 
 ```
 vocosphere/
-├── src/                      # 前端（React + TypeScript + Vite）
-│   ├── pages/                # 页面：ModelConfigPage, AudioCapturePage, LogsPage
-│   ├── components/           # 组件：AsrConfig
-│   ├── context/              # 状态管理：Environment, ASR, Logs
-│   └── layouts/              # 布局：AppLayout
-├── src-tauri/                # 后端（Rust + Tauri）
+├── src/                          # 前端（React + TypeScript + Vite）
+│   ├── pages/                    # 页面
+│   │   ├── ModelConfigPage.tsx   # ASR 模型配置页
+│   │   ├── AudioSourceSettingsPage.tsx  # 音频源设置 + 识别结果
+│   │   ├── SubtitleSettingsPage.tsx     # 字幕样式配置页
+│   │   └── LogsPage.tsx          # 实时日志页
+│   ├── components/               # 组件
+│   │   ├── SubtitleOverlay.tsx   # 全局字幕叠加层（Portal 渲染）
+│   │   ├── CustomSelect.tsx      # 自定义下拉选择器
+│   │   └── ui/                   # shadcn/ui 基础组件
+│   ├── context/                  # 状态管理
+│   │   ├── AppContext.tsx         # 统一导出入口
+│   │   ├── AsrContext.tsx        # ASR 状态与命令
+│   │   ├── EnvironmentContext.tsx # 环境信息
+│   │   └── LogsContext.tsx       # 日志订阅
+│   ├── layouts/
+│   │   └── AppLayout.tsx         # 可折叠侧边栏布局
+│   ├── types/
+│   │   └── asr.ts                # ASR 相关类型定义
+│   └── lib/utils.ts              # Tailwind 工具函数
+├── src-tauri/                    # 后端（Rust + Tauri v2）
 │   ├── src/
-│   │   ├── asr/              # ASR 模块（WebSocket 协议）
-│   │   ├── audio/            # 音频处理模块
-│   │   ├── audio_capture.rs  # 音频采集命令
-│   │   └── main.rs           # 主程序入口
-├── bin/                      # 工具脚本
-│   └── diagnose.sh           # 环境诊断脚本
-├── docs/                      # 项目文档
-└── .mise.toml                # 工具链版本配置
+│   │   ├── asr/                  # ASR 模块（WebSocket 协议）
+│   │   │   ├── config.rs         # ASR 配置类型
+│   │   │   ├── events.rs         # 事件推送到前端
+│   │   │   └── websocket/        # Gummy / Paraformer 协议实现
+│   │   ├── audio/                # 音频处理模块（cpal + rubato）
+│   │   ├── audio_capture.rs      # Tauri 命令：get/start/stop_audio_capture
+│   │   ├── logger.rs             # 日志推送到前端
+│   │   ├── app_state.rs          # 全局 AppHandle 存储
+│   │   └── main.rs               # 程序入口
+├── bin/                          # 工具脚本
+│   └── diagnose.sh               # 环境诊断脚本
+├── docs/                         # 项目文档
+└── .mise.toml                    # 工具链版本配置
 ```
 
 查看 [docs/README.md](./docs/README.md) 了解完整文档列表。
@@ -102,7 +126,7 @@ vocosphere/
 
 ## 🛠️ 技术栈
 
-**前端**：React 18 + TypeScript + Vite + Ant Design 5 + ESLint + Prettier  
+**前端**：React 18 + TypeScript + Vite + Tailwind CSS v4 + shadcn/ui + Lucide React + React Router v6 + sonner  
 **后端**：Rust + Tauri v2 + cpal + rubato + tokio + tokio-tungstenite
 
 ---
@@ -151,10 +175,17 @@ const result = await invoke<string>('greet', { name: 'World' })
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-await invoke('start_audio_capture', { config })
+// 获取可用设备
+const devices = await invoke<AudioDevice[]>('get_audio_devices')
+
+// 启动捕获（支持指定设备）
+await invoke('start_audio_capture', { config, deviceName: 'BlackHole 2ch' })
+
+// 监听识别结果
 const unlisten = await listen('asr-result', (event) => {
   console.log('ASR 结果:', event.payload)
 })
+
 await invoke('stop_audio_capture')
 ```
 
@@ -185,6 +216,7 @@ await invoke('stop_audio_capture')
 ## 📖 主要模块
 
 - **前端状态管理** (`src/context/`)：EnvironmentProvider, AsrProvider, LogsProvider
+- **字幕叠加** (`src/components/SubtitleOverlay.tsx`)：Portal 渲染至 body，实时监听 ASR 结果，支持多预设样式
 - **ASR 模块** (`src-tauri/src/asr/`)：Gummy / Paraformer WebSocket 协议实现
 - **音频处理** (`src-tauri/src/audio/`)：基于 cpal 的音频采集与 rubato 重采样
 

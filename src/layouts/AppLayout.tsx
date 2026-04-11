@@ -1,15 +1,9 @@
-import { HomeOutlined, SoundOutlined, HistoryOutlined } from '@ant-design/icons'
-import { Layout, Menu, Typography, Space, theme } from 'antd'
-import { useMemo } from 'react'
+import { FileText, History, Settings2, PanelLeftClose, PanelLeftOpen, Volume2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
-import type { MenuProps } from 'antd'
-import type { ReactNode } from 'react'
-
-const { Sider, Content, Header } = Layout
-const { Title, Text } = Typography
-
-type SectionPath = '/' | '/audio' | '/logs'
+type SectionPath = '/' | '/audio' | '/logs' | '/subtitle'
 
 interface MenuItem {
   path: SectionPath
@@ -18,15 +12,16 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { path: '/', label: '模型配置', icon: <HomeOutlined /> },
-  { path: '/audio', label: '音频捕获', icon: <SoundOutlined /> },
-  { path: '/logs', label: '运行日志', icon: <HistoryOutlined /> },
+  { path: '/', label: '模型', icon: <Settings2 size={18} /> },
+  { path: '/audio', label: '音频源', icon: <Volume2 size={18} /> },
+  { path: '/subtitle', label: '字幕', icon: <FileText size={18} /> },
+  { path: '/logs', label: '运行日志', icon: <History size={18} /> },
 ]
 
 const AppLayout = () => {
-  const { token } = theme.useToken()
   const location = useLocation()
   const navigate = useNavigate()
+  const [collapsed, setCollapsed] = useState(false)
 
   const activeKey = useMemo<SectionPath>(() => {
     const match = MENU_ITEMS.find((item) =>
@@ -35,106 +30,92 @@ const AppLayout = () => {
     return match ? match.path : '/'
   }, [location.pathname])
 
-  const onMenuClick: MenuProps['onClick'] = (info) => {
-    const key = info.key as SectionPath
-    if (location.pathname !== key) {
-      navigate(key)
-    }
-  }
-
   return (
-    <Layout
-      style={{
-        height: '100vh',
-        overflow: 'hidden',
-      }}
-    >
-      <Sider
-        width={240}
-        theme="dark"
-        style={{
-          background: 'linear-gradient(160deg, #0b1220 0%, #101c33 100%)',
-          borderRight: '1px solid rgba(255, 255, 255, 0.05)',
-          boxShadow: 'inset -1px 0 0 rgba(255, 255, 255, 0.04)',
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+      <aside
+        className={`${
+          collapsed ? 'w-16' : 'w-64'
+        } shrink-0 border-r border-slate-200/80 bg-white flex flex-col justify-between`}
       >
-        <Space direction="vertical" size={2} style={{ padding: '24px 16px' }}>
-          <Title level={4} style={{ color: '#fff', margin: 0 }}>
-            VocoSphere
-          </Title>
-          <Text style={{ color: 'rgba(255,255,255,0.65)' }}>实时语音识别与翻译</Text>
-        </Space>
-        <Menu
-          theme="dark"
-          mode="inline"
-          style={{
-            background: 'transparent',
-            borderInlineEnd: 'none',
-            padding: '8px 12px',
-            flex: 1,
-            overflow: 'auto',
-          }}
-          selectedKeys={[activeKey]}
-          items={MENU_ITEMS.map((item) => ({
-            key: item.path,
-            icon: item.icon,
-            label: item.label,
-          }))}
-          onClick={onMenuClick}
-        />
-      </Sider>
-      <Layout
-        style={{
-          background: token.colorBgLayout,
-          height: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <Header
-          style={{
-            background: token.colorBgElevated,
-            padding: '0 48px',
-            display: 'flex',
-            alignItems: 'center',
-            borderBottom: `1px solid ${token.colorSplit}`,
-            boxShadow: token.boxShadowSecondary,
-            position: 'sticky',
-            top: 0,
-            zIndex: 5,
-          }}
-        >
-          <Title level={4} style={{ margin: 0, color: token.colorTextHeading }}>
-            {MENU_ITEMS.find((item) => item.path === activeKey)?.label}
-          </Title>
-        </Header>
-        <Content
-          style={{
-            padding: '32px 0 48px',
-            background: token.colorBgLayout,
-            overflowY: 'auto',
-            flex: 1,
-          }}
-        >
+        <div>
           <div
-            style={{
-              maxWidth: 1280,
-              margin: '0 auto',
-              padding: '0 32px',
-            }}
+            className={`h-16 border-b border-slate-100 ${
+              collapsed ? 'flex items-center justify-center px-2' : 'flex items-center px-6'
+            }`}
           >
+            {collapsed ? (
+              <span className="text-base font-bold tracking-tight text-slate-900">VS</span>
+            ) : (
+              <div className="flex flex-col">
+                <span className="text-lg font-bold tracking-tight text-slate-900">VocoSphere</span>
+                <span className="text-[11px] font-medium text-slate-500">实时语音识别与翻译</span>
+              </div>
+            )}
+          </div>
+
+          <nav className={`${collapsed ? 'p-2' : 'p-3'} space-y-1`}>
+            {MENU_ITEMS.map((item) => {
+              const selected = item.path === activeKey
+
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  aria-current={selected ? 'page' : undefined}
+                  onClick={() => {
+                    if (location.pathname !== item.path) navigate(item.path)
+                  }}
+                  className={`w-full rounded-lg text-sm font-medium transition-colors flex items-center ${
+                    collapsed ? 'justify-center px-2 py-2' : 'gap-3 px-3 py-2'
+                  } border ${
+                    selected
+                      ? 'bg-blue-50 text-blue-700 border-blue-100/50'
+                      : 'border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                  title={collapsed ? item.label : undefined}
+                >
+                  <span className={selected ? 'text-blue-600' : 'text-slate-500/90'}>
+                    {item.icon}
+                  </span>
+                  {!collapsed && item.label}
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+
+        <div className="p-4 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setCollapsed(!collapsed)}
+            className={`w-full rounded-md px-2 py-1.5 text-sm font-medium transition-colors hover:bg-slate-50 text-slate-500 hover:text-slate-900 flex items-center ${
+              collapsed ? 'justify-center' : 'gap-2'
+            }`}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+            {!collapsed && '收起'}
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-y-auto">
+        <header className="sticky top-0 z-10 h-16 px-8 flex items-center bg-slate-50/80 backdrop-blur-md border-b border-slate-200/80">
+          <h1 className="text-lg font-semibold text-slate-900">
+            {MENU_ITEMS.find((item) => item.path === activeKey)?.label}
+          </h1>
+        </header>
+
+        <main className="bg-slate-50 p-6 md:p-10">
+          <div className="w-full">
             <Outlet />
           </div>
-        </Content>
-      </Layout>
-    </Layout>
+        </main>
+      </div>
+    </div>
   )
 }
 
