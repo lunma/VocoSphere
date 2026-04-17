@@ -1,121 +1,91 @@
-// ASR 模型配置模块
-// 定义 Gummy 和 Paraformer 模型的配置数据结构
-
 use serde::{Deserialize, Serialize};
 
-/// 服务器配置（WebSocket URL 和 API Key）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerConfig {
-    /// WebSocket 服务器地址
-    #[serde(default = "default_ws_url")]
-    pub ws_url: String,
-
-    /// API Key
-    #[serde(default = "default_api_key")]
-    pub api_key: String,
-}
-
-/// ASR 模型类型
+/// 顶层 Provider 配置（前端传入 Tauri 命令）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum AsrModelConfig {
+pub enum AsrProviderConfig {
+    #[serde(rename = "local")]
+    Local(LocalAsrConfig),
+    #[serde(rename = "cloud")]
+    Cloud(CloudAsrConfig),
+}
+
+/// 云端 Provider 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudAsrConfig {
+    /// 流式识别模型（Gummy 或 Paraformer）
+    #[serde(default)]
+    pub streaming: CloudStreamingConfig,
+    /// OSS 上传配置（文件识别使用）
+    #[serde(default)]
+    pub oss: OssConfig,
+    /// 文件识别 DashScope API Key
+    #[serde(default = "default_api_key")]
+    pub file_asr_api_key: String,
+}
+
+impl Default for CloudAsrConfig {
+    fn default() -> Self {
+        Self {
+            streaming: CloudStreamingConfig::default(),
+            oss: OssConfig::default(),
+            file_asr_api_key: default_api_key(),
+        }
+    }
+}
+
+/// 流式识别模型选择（原 AsrModelConfig 改名）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum CloudStreamingConfig {
     #[serde(rename = "gummy")]
     Gummy(GummyConfig),
     #[serde(rename = "paraformer")]
     Paraformer(ParaformerConfig),
 }
 
-/// Gummy 模型配置
+impl Default for CloudStreamingConfig {
+    fn default() -> Self {
+        Self::Gummy(GummyConfig::default())
+    }
+}
+
+/// OSS 上传配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GummyConfig {
-    /// 服务器配置（WebSocket URL 和 API Key）
+pub struct OssConfig {
+    /// OSS endpoint host，如 oss-cn-beijing.aliyuncs.com
+    #[serde(default = "default_oss_endpoint")]
+    pub endpoint: String,
     #[serde(default)]
-    pub server_config: ServerConfig,
-
-    /// 源语言（如：zh、en、ja、ko、de、fr、ru 等）
-    #[serde(default = "default_source_language")]
-    pub source_language: String,
-
-    /// 语言提示列表（可选）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language_hints: Option<Vec<String>>,
-
-    /// 是否启用翻译功能
+    pub bucket: String,
     #[serde(default)]
-    pub translation_enabled: bool,
-
-    /// 翻译目标语言列表（如：["en", "ja"]）
+    pub access_key_id: String,
     #[serde(default)]
-    pub translation_target_languages: Vec<String>,
-
-    /// 定制热词ID（可选）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vocabulary_id: Option<String>,
-
-    /// 标点符号预测（默认开启）
-    #[serde(default = "default_true")]
-    pub punctuation_prediction_enabled: bool,
-
-    /// 逆文本正则化（默认开启）
-    #[serde(default = "default_true")]
-    pub itn_enabled: bool,
+    pub access_key_secret: String,
 }
 
-/// Paraformer 模型配置
+impl Default for OssConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: default_oss_endpoint(),
+            bucket: String::new(),
+            access_key_id: String::new(),
+            access_key_secret: String::new(),
+        }
+    }
+}
+
+/// 本地 Provider 配置（占位，待后续填充）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParaformerConfig {
-    /// 服务器配置（WebSocket URL 和 API Key）
-    #[serde(default)]
-    pub server_config: ServerConfig,
+pub struct LocalAsrConfig {}
 
-    /// 源语言（如：zh、en、ja、ko、de、fr、ru 等）
-    #[serde(default = "default_source_language")]
-    pub source_language: String,
-
-    /// 语言提示列表（可选）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language_hints: Option<Vec<String>>,
-
-    /// 定制热词ID（可选）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vocabulary_id: Option<String>,
-
-    /// 不流畅词过滤（如：嗯、啊等语气词）
-    #[serde(default)]
-    pub disfluency_removal_enabled: bool,
-
-    /// 标点符号预测（默认开启）
-    #[serde(default = "default_true")]
-    pub punctuation_prediction_enabled: bool,
-
-    /// 逆文本正则化（默认开启）
-    #[serde(default = "default_true")]
-    pub itn_enabled: bool,
-
-    /// 方言设置（可选，如：四川话、粤语等）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dialect: Option<String>,
-
-    /// 情感识别（部分模型支持）
-    #[serde(default)]
-    pub emotion_enabled: bool,
-}
-
-// 默认值函数
-fn default_ws_url() -> String {
-    "wss://dashscope.aliyuncs.com/api-ws/v1/inference/".to_string()
-}
-
-fn default_api_key() -> String {
-    "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string()
-}
-
-fn default_source_language() -> String {
-    "zh".to_string()
-}
-
-fn default_true() -> bool {
-    true
+/// 服务器配置（WebSocket URL 和 API Key）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    #[serde(default = "default_ws_url")]
+    pub ws_url: String,
+    #[serde(default = "default_api_key")]
+    pub api_key: String,
 }
 
 impl Default for ServerConfig {
@@ -125,6 +95,27 @@ impl Default for ServerConfig {
             api_key: default_api_key(),
         }
     }
+}
+
+/// Gummy 模型配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GummyConfig {
+    #[serde(default)]
+    pub server_config: ServerConfig,
+    #[serde(default = "default_source_language")]
+    pub source_language: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_hints: Option<Vec<String>>,
+    #[serde(default)]
+    pub translation_enabled: bool,
+    #[serde(default)]
+    pub translation_target_languages: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocabulary_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub punctuation_prediction_enabled: bool,
+    #[serde(default = "default_true")]
+    pub itn_enabled: bool,
 }
 
 impl Default for GummyConfig {
@@ -142,6 +133,29 @@ impl Default for GummyConfig {
     }
 }
 
+/// Paraformer 模型配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParaformerConfig {
+    #[serde(default)]
+    pub server_config: ServerConfig,
+    #[serde(default = "default_source_language")]
+    pub source_language: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_hints: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocabulary_id: Option<String>,
+    #[serde(default)]
+    pub disfluency_removal_enabled: bool,
+    #[serde(default = "default_true")]
+    pub punctuation_prediction_enabled: bool,
+    #[serde(default = "default_true")]
+    pub itn_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialect: Option<String>,
+    #[serde(default)]
+    pub emotion_enabled: bool,
+}
+
 impl Default for ParaformerConfig {
     fn default() -> Self {
         Self {
@@ -155,5 +169,57 @@ impl Default for ParaformerConfig {
             dialect: None,
             emotion_enabled: false,
         }
+    }
+}
+
+/// 向后兼容别名，待后续任务迁移完毕后删除
+#[allow(dead_code)]
+pub type AsrModelConfig = CloudStreamingConfig;
+
+fn default_ws_url() -> String {
+    "wss://dashscope.aliyuncs.com/api-ws/v1/inference/".to_string()
+}
+
+fn default_api_key() -> String {
+    "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string()
+}
+
+fn default_source_language() -> String {
+    "zh".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_oss_endpoint() -> String {
+    "oss-cn-beijing.aliyuncs.com".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_config_roundtrip_cloud() {
+        let config = AsrProviderConfig::Cloud(CloudAsrConfig {
+            streaming: CloudStreamingConfig::Gummy(GummyConfig::default()),
+            oss: OssConfig {
+                endpoint: "oss-cn-beijing.aliyuncs.com".to_string(),
+                bucket: "my-bucket".to_string(),
+                access_key_id: "key_id".to_string(),
+                access_key_secret: "key_secret".to_string(),
+            },
+            file_asr_api_key: "sk-xxx".to_string(),
+        });
+        let json = serde_json::to_string(&config).unwrap();
+        let _: AsrProviderConfig = serde_json::from_str(&json).unwrap();
+    }
+
+    #[test]
+    fn test_provider_config_roundtrip_local() {
+        let config = AsrProviderConfig::Local(LocalAsrConfig {});
+        let json = serde_json::to_string(&config).unwrap();
+        let _: AsrProviderConfig = serde_json::from_str(&json).unwrap();
     }
 }
