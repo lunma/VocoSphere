@@ -38,8 +38,14 @@ tokio-rustls = "0.26.0"
 uuid = { version = "1.17.0",features = ["v4"] }
 chrono = "0.4" # 时间处理（用于日志时间戳）
 
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+hmac = "0.12"
+sha1 = "0.10"
+base64 = "0.22"
 
-
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 panic = "abort"             # 发生 panic 时直接终止，提高性能，减小体积
