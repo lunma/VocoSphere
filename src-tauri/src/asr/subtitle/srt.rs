@@ -1,4 +1,4 @@
-use crate::asr::events::{AsrResultEvent, AsrResultKind};
+use crate::asr::events::AsrResultEvent;
 use std::fmt::Write as FmtWrite;
 use std::path::Path;
 
@@ -31,6 +31,7 @@ pub fn write_srt(events: &[AsrResultEvent], path: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asr::events::AsrResultKind;
 
     #[test]
     fn test_format_zero() {
