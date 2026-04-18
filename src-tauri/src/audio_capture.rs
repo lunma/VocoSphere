@@ -12,6 +12,9 @@ use tokio::sync::mpsc;
 
 // 导入 crate 中的其他模块
 use crate::asr;
+use crate::asr::config::AsrProviderConfig;
+use crate::asr::provider::{CloudAsrProvider, LocalAsrProvider};
+use crate::asr::AsrProvider;
 use crate::audio;
 use crate::utils;
 
@@ -28,7 +31,7 @@ pub fn get_audio_devices() -> Result<Vec<audio::AudioDevice>, String> {
 /// 前端可以通过 invoke('start_audio_capture', {config: {...}, deviceName: "..."}) 调用此函数
 #[tauri::command]
 pub async fn start_audio_capture(
-    config: crate::asr::config::AsrModelConfig,
+    config: AsrProviderConfig,
     device_name: Option<String>,
 ) -> Result<String, String> {
     // 使用 compare_exchange 原子化地"检查并设置"
@@ -88,7 +91,7 @@ pub fn stop_audio_capture() -> Result<String, String> {
 
 /// 音频捕获的实际实现
 async fn run_audio_capture(
-    config: crate::asr::config::AsrModelConfig,
+    config: AsrProviderConfig,
     device_name: Option<String>,
 ) -> anyhow::Result<()> {
     // 根据设备名称查找设备，如果未指定则使用默认环回设备
@@ -129,7 +132,7 @@ async fn run_audio_capture(
 
         // 创建原始音频文件写入器
         let original_spec = WavSpec {
-            channels: 2,
+            channels: default_channel_count,
             sample_rate: default_rate,
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
@@ -172,10 +175,11 @@ async fn run_audio_capture(
     );
 
     // 计算重采样比例和延迟
+    // input_duration_ms = frame_size / sample_rate_in * 1000
+    // 不乘通道数：frame_size 是每通道的样本数，时长只与采样率相关
     let resample_ratio = audio_config.sample_rate_out as f64 / audio_config.sample_rate_in as f64;
-    let input_samples_needed = audio_config.frame_size * audio_config.channels as usize;
     let input_duration_ms =
-        (input_samples_needed as f64 / audio_config.sample_rate_in as f64 * 1000.0) as u64;
+        (audio_config.frame_size as f64 / audio_config.sample_rate_in as f64 * 1000.0) as u64;
 
     info!(
         "⏱️  处理延迟: ~{}ms (帧大小={}, 重采样比例={:.2})",
@@ -189,9 +193,12 @@ async fn run_audio_capture(
     let resampler = init_resampler(&audio_config, resample_ratio);
     let (tx, rx) = mpsc::channel::<Vec<f32>>(1000);
 
-    // 使用统一的 ASR 启动接口
     info!("🤖 ASR: 启动语音识别，配置: {:?}", config);
-    asr::websocket::start_asr_with_config(Some(rx), config).await;
+    let provider: Box<dyn AsrProvider> = match config {
+        AsrProviderConfig::Cloud(c) => Box::new(CloudAsrProvider::new(c)),
+        AsrProviderConfig::Local(c) => Box::new(LocalAsrProvider::new(c)),
+    };
+    provider.recognize_stream(rx).await?;
 
     info!("🎙️  开始捕获音频...");
 
@@ -209,6 +216,7 @@ async fn run_audio_capture(
             avg_volume: 0.0,
             frame_count: 0,
             low_volume_count: 0,
+            window_low_count: 0,
         },
     };
 
@@ -241,10 +249,26 @@ async fn run_audio_capture(
             err_fn,
             None,
         ),
-        _ => {
+        cpal::SampleFormat::I32 => device.build_input_stream(
+            &stream_config,
+            move |data: &[i32], _: &_| {
+                audio::process_audio_data(data, &mut recording_state, &audio_config);
+            },
+            err_fn,
+            None,
+        ),
+        cpal::SampleFormat::F64 => device.build_input_stream(
+            &stream_config,
+            move |data: &[f64], _: &_| {
+                audio::process_audio_data(data, &mut recording_state, &audio_config);
+            },
+            err_fn,
+            None,
+        ),
+        fmt => {
             return Err(anyhow!(
                 "不支持的采样格式：{:?}",
-                default_input_config.sample_format()
+                fmt
             ))
         }
     }?;
