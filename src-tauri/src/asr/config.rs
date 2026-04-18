@@ -76,7 +76,7 @@ impl Default for OssConfig {
 }
 
 /// 本地 Provider 配置（占位，待后续填充）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LocalAsrConfig {}
 
 /// 服务器配置（WebSocket URL 和 API Key）
@@ -173,7 +173,7 @@ impl Default for ParaformerConfig {
 }
 
 /// 向后兼容别名，待后续任务迁移完毕后删除
-#[allow(dead_code)]
+#[deprecated(note = "use CloudStreamingConfig directly; remove after all callers are migrated")]
 pub type AsrModelConfig = CloudStreamingConfig;
 
 fn default_ws_url() -> String {
@@ -181,7 +181,7 @@ fn default_ws_url() -> String {
 }
 
 fn default_api_key() -> String {
-    "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string()
+    String::new()
 }
 
 fn default_source_language() -> String {
@@ -193,7 +193,7 @@ fn default_true() -> bool {
 }
 
 fn default_oss_endpoint() -> String {
-    "oss-cn-beijing.aliyuncs.com".to_string()
+    String::new()
 }
 
 #[cfg(test)]
@@ -213,13 +213,20 @@ mod tests {
             file_asr_api_key: "sk-xxx".to_string(),
         });
         let json = serde_json::to_string(&config).unwrap();
-        let _: AsrProviderConfig = serde_json::from_str(&json).unwrap();
+        let back: AsrProviderConfig = serde_json::from_str(&json).unwrap();
+        if let AsrProviderConfig::Cloud(c) = back {
+            assert_eq!(c.file_asr_api_key, "sk-xxx");
+            assert_eq!(c.oss.bucket, "my-bucket");
+        } else {
+            panic!("expected Cloud variant");
+        }
     }
 
     #[test]
     fn test_provider_config_roundtrip_local() {
         let config = AsrProviderConfig::Local(LocalAsrConfig {});
         let json = serde_json::to_string(&config).unwrap();
-        let _: AsrProviderConfig = serde_json::from_str(&json).unwrap();
+        let back: AsrProviderConfig = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, AsrProviderConfig::Local(_)));
     }
 }
