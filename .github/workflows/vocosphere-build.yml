@@ -101,6 +101,47 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64" `
             -OutFile "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe"
 
+      - name: Cache whisper-cli sidecar
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        id: whisper-cache
+        with:
+          path: src-tauri/binaries/whisper-cli*
+          key: whisper-cli-v1.8.4-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build whisper-cli sidecar (macOS / Linux)
+        if: runner.os != 'Windows' && steps.whisper-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            macOS-ARM64) TRIPLE="aarch64-apple-darwin" ;;
+            macOS-X64)   TRIPLE="x86_64-apple-darwin" ;;
+            Linux-X64)   TRIPLE="x86_64-unknown-linux-gnu" ;;
+            Linux-ARM64) TRIPLE="aarch64-unknown-linux-gnu" ;;
+          esac
+          git clone https://github.com/ggml-org/whisper.cpp --depth=1 --branch v1.8.4 _whisper_src
+          cmake -S _whisper_src -B _whisper_build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build _whisper_build --config Release --target whisper-cli \
+            -j$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
+          mkdir -p src-tauri/binaries
+          cp _whisper_build/bin/whisper-cli "src-tauri/binaries/whisper-cli-${TRIPLE}"
+          chmod +x "src-tauri/binaries/whisper-cli-${TRIPLE}"
+
+      - name: Setup whisper-cli sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.4/whisper-bin-x64.zip" `
+            -OutFile whisper-bin.zip
+          Expand-Archive -Path whisper-bin.zip -DestinationPath whisper-bin
+          $exe = Get-ChildItem -Path whisper-bin -Filter "whisper-cli.exe" -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          Copy-Item $exe "src-tauri/binaries/whisper-cli-x86_64-pc-windows-msvc.exe"
+
       - name: Check code formatting and lint
         run: |
           pnpm format:check
