@@ -24,50 +24,18 @@ VocoSphere 是一款基于 Tauri v2 + React 18 的跨平台桌面应用，用于
 
 ---
 
-## 项目结构
+## 项目结构（关键文件）
 
-```
-src/
-  App.tsx                 # React Router 路由配置 + 全局 hook 挂载点
-  main.tsx                # 主窗口入口
-  subtitle-main.tsx       # 字幕悬浮窗入口（独立 webview）
-  index.css               # Tailwind 指令 + OKLCH 主题 token
-  subtitle.css            # 字幕窗口专用样式（透明背景等）
-  store/
-    environmentStore.ts   # 检测是否处于 Tauri 环境（isTauriEnv）
-    asrStore.ts           # ASR 配置、设备列表、采集状态、识别结果
-    logsStore.ts          # 日志流（上限 500 条）
-    subtitleSettingsStore.ts  # 字幕设置 Zustand store（纯内存，持久化由 hook 负责）
-  hooks/
-    useTauriListeners.ts  # useAsrListener、useLogsListener（全局事件订阅）
-    useSubtitleSettings.ts  # 字幕设置 hook：读写 plugin-store + 广播事件 + 窗口控制
-  layouts/
-    AppLayout.tsx          # 侧边栏 + 顶栏主布局
-  pages/
-    ModelConfigPage.tsx
-    AudioSourceSettingsPage.tsx
-    SubtitleSettingsPage.tsx  # 使用 useSubtitleSettings()
-    LogsPage.tsx
-  components/
-    ui/                   # shadcn/ui 基础组件（Button、Card、Input 等）
-    SubtitleOverlay.tsx   # 字幕渲染组件（字幕悬浮窗内使用）
-    CustomSelect.tsx      # 自定义下拉选择器
-  lib/
-    utils.ts              # cn() 工具函数（tailwind-merge + clsx）
+非显而易见的入口和跨域文件：
 
-src-tauri/src/
-  main.rs                 # Tauri 构建器 + 命令注册（含 tauri-plugin-store 注册）
-  app_state.rs            # OnceLock<AppHandle> 全局存储
-  logger.rs               # 自定义 log 后端 — 向前端发送 "log-message" 事件
-  audio_capture.rs        # Tauri 命令：get_audio_devices、start/stop_audio_capture
-  audio/
-    mod.rs                # AudioDevice 结构体、设备枚举
-    processor.rs          # 重采样管线（cpal → rubato）
-  asr/
-    mod.rs                # 协议分发（Gummy / Paraformer）
-    gummy.rs              # Gummy WebSocket 客户端
-    paraformer.rs         # Paraformer WebSocket 客户端
-```
+- `src/main.tsx` — 主窗口入口；`src/subtitle-main.tsx` — 字幕悬浮窗独立入口（对应 `subtitle-overlay.html`）
+- `src/store/environmentStore.ts` — `isTauriEnv` 守卫来源
+- `src/hooks/useSubtitleSettings.ts` — 字幕设置的持久化与 `subtitle-settings-changed` 广播（页面级 hook）
+- `src/hooks/useSubtitleWindow.ts` — 主窗口控制字幕悬浮窗显隐（`subtitle-visibility`）及实时设置同步（`subtitle-settings-sync`）
+- `src/hooks/useTauriListeners.ts` — 全局 `asr-result` / `log-message` 事件监听，在 App 根和字幕窗口均挂载
+- `src-tauri/src/app_state.rs` — `OnceLock<AppHandle>` 全局存储
+- `src-tauri/src/logger.rs` — 自定义 log 后端，将日志通过 `log-message` 事件转发前端
+- `src/context/` — 已迁移至 Zustand；`AsrContext.tsx` / `LogsContext.tsx` 仅保留类型重导出，`EnvironmentContext.tsx` 仍在使用
 
 ---
 
@@ -119,17 +87,7 @@ pnpm tauri build
 
 - 封装 Tauri 交互和副作用，让页面保持薄。
 - 必须用 `isTauriEnv` 守卫所有 Tauri API 调用（`useEnvironmentStore((s) => s.isTauriEnv)`）。
-- `useEffect` 中注册的 Tauri 事件监听器，**必须**在返回的清理函数中取消订阅。
-
-```tsx
-useEffect(() => {
-  if (!isTauriEnv) return
-  const unlisten = listen<MyPayload>('my-event', (event) => {
-    useMyStore.getState().setData(event.payload)
-  })
-  return () => { unlisten.then(fn => fn()) }
-}, [isTauriEnv])
-```
+- `useEffect` 中注册的 Tauri 事件监听器，**必须**在返回的清理函数中取消订阅（`unlisten.then(fn => fn())`）。
 
 ### 页面组件
 
@@ -164,19 +122,27 @@ pnpm dlx shadcn@latest add <组件名>
 
 ```
 主窗口
-  └─ useSubtitleSettings()        ← SubtitleSettingsPage 调用
-       ├─ 读取：tauri-plugin-store → 初始化 Zustand store
-       ├─ 写入：updateSetting(key, value)
-       │    ├─ 更新 Zustand store（同步）
-       │    ├─ 保存到 subtitle_settings.json（tauri-plugin-store）
-       │    ├─ emit('subtitle-settings-changed', newSettings)
-       │    └─ enabled 切换 → WebviewWindow.show() / .hide()
-       └─ resetSettings() 同理
+  ├─ useSubtitleSettings()        ← SubtitleSettingsPage 调用
+  │    ├─ 读取：tauri-plugin-store → 初始化 Zustand store
+  │    ├─ 写入：updateSetting(key, value)
+  │    │    ├─ 更新 Zustand store（同步）
+  │    │    ├─ 保存到 subtitle_settings.json（tauri-plugin-store）
+  │    │    └─ emit('subtitle-settings-changed', newSettings)
+  │    └─ resetSettings() 同理
+  └─ useSubtitleWindow()          ← App 根挂载
+       ├─ enabled 变化 → emitTo('subtitle-overlay', 'subtitle-visibility', { show })
+       │    字幕窗口收到后自行调用 getCurrentWindow().show() / .hide()
+       └─ enabled=true 时同步推送最新设置：
+            emitTo('subtitle-overlay', 'subtitle-settings-sync', settings)
 
 字幕窗口（subtitle-main.tsx）
   ├─ 启动时：load('subtitle_settings.json') → useSubtitleSettingsStore.setState()
   │           enabled=true → getCurrentWindow().show()
   ├─ listen('subtitle-settings-changed') → useSubtitleSettingsStore.setState(payload)
+  ├─ listen('subtitle-settings-sync')    → useSubtitleSettingsStore.setState(payload)
+  ├─ listen('subtitle-visibility')       → getCurrentWindow().show() / .hide()
+  ├─ listen('asr-session-reset')         → useAsrStore.getState().clearAsrResults()
+  │    ↑ 新会话开始时主窗口发出，字幕窗口清除旧结果（begin_time 从 0 重新计时）
   └─ subscribe(store) → windowX/Y 变化时回写到 subtitle_settings.json
 
 SubtitleOverlay.tsx（字幕窗口内）
@@ -189,7 +155,10 @@ SubtitleOverlay.tsx（字幕窗口内）
 
 | 事件名 | 方向 | 载荷 | 用途 |
 |---|---|---|---|
-| `subtitle-settings-changed` | 主窗口 → 字幕窗口 | `SubtitleSettings` | 实时同步全量设置 |
+| `subtitle-settings-changed` | 主窗口 → 字幕窗口 | `SubtitleSettings` | 设置变更时全量同步（`emit` 广播） |
+| `subtitle-settings-sync` | 主窗口 → 字幕窗口 | `SubtitleSettings` | 字幕窗口显示时主动推送最新设置（`emitTo`） |
+| `subtitle-visibility` | 主窗口 → 字幕窗口 | `{ show: boolean }` | 控制字幕窗口自身调用 show/hide（`emitTo`） |
+| `asr-session-reset` | 主窗口 → 字幕窗口 | — | 新录音会话开始，字幕窗口清除旧 ASR 结果 |
 | `asr-result` | Rust → 前端 | `AsrResultMessage` | 识别结果推送 |
 | `log-message` | Rust → 前端 | `LogMessage` | 日志推送 |
 
@@ -228,56 +197,11 @@ SubtitleOverlay.tsx（字幕窗口内）
 
 ## Tauri IPC 规范
 
-### 前端调用命令
-
-```ts
-import { invoke } from '@tauri-apps/api/core'
-
-const result = await invoke<返回类型>('command_name', { param: value })
-```
-
-### 前端监听事件
-
-```ts
-import { listen } from '@tauri-apps/api/event'
-
-const unlisten = await listen<PayloadType>('event-name', (event) => {
-  console.log(event.payload)
-})
-// 组件卸载时调用 unlisten()
-```
-
-### 跨窗口广播事件
-
-```ts
-import { emit } from '@tauri-apps/api/event'
-
-// 广播给所有窗口
-emit('event-name', payload)
-```
-
-### Rust 定义命令
-
-```rust
-#[tauri::command]
-async fn my_command(param: String) -> Result<String, String> {
-    do_something(param).await.map_err(|e| e.to_string())
-}
-```
-
-在 `main.rs` 中注册：
-```rust
-.invoke_handler(tauri::generate_handler![my_command])
-```
-
-### Rust 发送事件到前端
-
-```rust
-use crate::app_state::get_app_handle;
-
-let app = get_app_handle();
-app.emit("my-event", &payload).ok();
-```
+- 前端调用命令：`invoke<T>('command_name', { param })` — 来自 `@tauri-apps/api/core`
+- 前端监听事件：`listen<T>('event-name', handler)` — 来自 `@tauri-apps/api/event`，组件卸载时调用返回的 `unlisten()`
+- 跨窗口广播：`emit('event-name', payload)` — 来自 `@tauri-apps/api/event`
+- Rust 命令：`#[tauri::command] async fn my_cmd(...) -> Result<T, String>`，在 `main.rs` 的 `generate_handler![]` 中注册
+- Rust 发事件：`get_app_handle().emit("event-name", &payload).ok()`
 
 ---
 
@@ -288,24 +212,10 @@ app.emit("my-event", &payload).ok();
 | 字幕样式/行为设置 | `@tauri-apps/plugin-store` | `subtitle_settings.json`，双窗口共享 |
 | 其他用户设置 | `localStorage` | key 用 SCREAMING_SNAKE_CASE，定义在 store/hook 文件顶部 |
 
-**tauri-plugin-store 使用模式：**
-
-```ts
-import { load } from '@tauri-apps/plugin-store'
-
-// defaults 必须提供（StoreOptions 要求）
-const store = await load('myfile.json', {
-  autoSave: false,
-  defaults: MY_DEFAULTS as unknown as Record<string, unknown>,
-})
-
-await store.set('key', value)
-await store.save()          // autoSave: false 时必须手动调用
-
-const val = await store.get<MyType>('key')
-```
-
-缓存 store 实例避免重复打开文件（参考 `useSubtitleSettings.ts` 中的 `getStore()` 模式）。
+**tauri-plugin-store 使用要点：**
+- `load()` 时必须传 `defaults`（`StoreOptions` 要求）、`autoSave: false`
+- 写入后需手动调用 `store.save()`
+- 缓存 store 实例避免重复打开文件（参考 `useSubtitleSettings.ts` 中的 `getStore()` 模式）
 
 ---
 
@@ -319,6 +229,16 @@ const val = await store.get<MyType>('key')
   `logger.rs` 中的自定义后端会将所有日志通过 `log-message` 事件转发至前端。
 - 向前端返回结构化错误时，序列化为 JSON 字符串，前端可解析后展示具体提示。
 - 新增 Tauri 插件时，在 `Cargo.toml` 添加 crate，并在 `main.rs` 的 `builder` 链上注册 `.plugin(...)`。
+
+### macOS 字幕悬浮窗（NSPanel）
+
+字幕窗口在 macOS 上通过 `tauri_nspanel` 转换为 NSPanel，确保：
+- 浮于所有普通窗口之上（`PanelLevel::Floating`）
+- 不抢夺键盘焦点（`can_become_key_window: false`、`NonactivatingPanel`）
+- 跨 Space 显示、全屏兼容（`can_join_all_spaces` + `full_screen_auxiliary`）
+- 完全透明背景（`set_background_color(Some(Color(0,0,0,0)))`）
+
+在 `main.rs` 的 `setup` 回调中 `#[cfg(target_os = "macos")]` 块内配置，非 macOS 走 `set_always_on_top` 方案。
 
 ---
 
@@ -386,6 +306,25 @@ interface SubtitleSettings {
 - 禁止未使用变量（用 `_` 前缀屏蔽警告）。
 - `react-refresh/only-export-components`：组件文件中不要导出非组件内容。
 - 检查命令：`pnpm lint`
+
+---
+
+## 代码改动工作流
+
+**在执行任何代码改动之前**，必须先列出改动计划（TODO 清单），等待用户确认后再动手。
+
+格式：
+```
+计划改动：
+1. <文件路径> — <改动内容一句话描述>
+2. ...
+
+确认后开始执行？
+```
+
+以下情况不需要确认，可直接执行：
+- 用户已在消息中明确说明"直接改"、"去做"等意图
+- 只涉及单个文件的单处小修改（如改一个变量名、修正拼写）
 
 ---
 

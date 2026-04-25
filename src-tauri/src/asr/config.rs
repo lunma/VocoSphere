@@ -75,9 +75,49 @@ impl Default for OssConfig {
     }
 }
 
-/// 本地 Provider 配置（占位，待后续填充）
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LocalAsrConfig {}
+/// 单个本地 Whisper 模型配置（识别或翻译）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalModelConfig {
+    /// Whisper 模型文件绝对路径（.bin 文件）
+    #[serde(default)]
+    pub model_path: String,
+    /// 识别/翻译语言，如 "zh"、"en"、"auto"
+    #[serde(default = "default_local_language")]
+    pub language: String,
+    /// 推理线程数
+    #[serde(default = "default_n_threads")]
+    pub n_threads: u32,
+}
+
+impl Default for LocalModelConfig {
+    fn default() -> Self {
+        Self {
+            model_path: String::new(),
+            language: default_local_language(),
+            n_threads: default_n_threads(),
+        }
+    }
+}
+
+/// 本地 Provider 配置（whisper-cli sidecar），区分识别和翻译模型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAsrConfig {
+    /// 语音识别模型配置
+    #[serde(default)]
+    pub recognition: LocalModelConfig,
+    /// 语音翻译模型配置
+    #[serde(default)]
+    pub translation: LocalModelConfig,
+}
+
+impl Default for LocalAsrConfig {
+    fn default() -> Self {
+        Self {
+            recognition: LocalModelConfig::default(),
+            translation: LocalModelConfig::default(),
+        }
+    }
+}
 
 /// 服务器配置（WebSocket URL 和 API Key）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,9 +212,6 @@ impl Default for ParaformerConfig {
     }
 }
 
-/// 向后兼容别名，待后续任务迁移完毕后删除
-#[deprecated(note = "use CloudStreamingConfig directly; remove after all callers are migrated")]
-pub type AsrModelConfig = CloudStreamingConfig;
 
 fn default_ws_url() -> String {
     "wss://dashscope.aliyuncs.com/api-ws/v1/inference/".to_string()
@@ -194,6 +231,14 @@ fn default_true() -> bool {
 
 fn default_oss_endpoint() -> String {
     String::new()
+}
+
+fn default_local_language() -> String {
+    "auto".to_string()
+}
+
+fn default_n_threads() -> u32 {
+    4
 }
 
 #[cfg(test)]
@@ -224,9 +269,21 @@ mod tests {
 
     #[test]
     fn test_provider_config_roundtrip_local() {
-        let config = AsrProviderConfig::Local(LocalAsrConfig {});
+        let config = AsrProviderConfig::Local(LocalAsrConfig {
+            recognition: LocalModelConfig {
+                model_path: "/models/ggml-base.bin".to_string(),
+                language: "zh".to_string(),
+                n_threads: 4,
+            },
+            translation: LocalModelConfig::default(),
+        });
         let json = serde_json::to_string(&config).unwrap();
         let back: AsrProviderConfig = serde_json::from_str(&json).unwrap();
-        assert!(matches!(back, AsrProviderConfig::Local(_)));
+        if let AsrProviderConfig::Local(c) = back {
+            assert_eq!(c.recognition.model_path, "/models/ggml-base.bin");
+            assert_eq!(c.recognition.n_threads, 4);
+        } else {
+            panic!("expected Local variant");
+        }
     }
 }

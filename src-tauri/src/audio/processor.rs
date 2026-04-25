@@ -24,7 +24,7 @@ fn apply_gain(samples: &[f32], gain: f32) -> Vec<f32> {
         .collect()
 }
 
-// 更新音量统计信息
+// 更新音量统计信息（应在 gain 应用之后调用，统计实际发送给 ASR 的音量）
 fn update_volume_stats(samples: &[f32], stats: &mut VolumeStats) {
     if samples.is_empty() {
         return;
@@ -45,27 +45,29 @@ fn update_volume_stats(samples: &[f32], stats: &mut VolumeStats) {
     let alpha = 0.1; // 平滑因子
     stats.avg_volume = alpha * rms + (1.0 - alpha) * stats.avg_volume;
 
-    // 检测低音量（RMS < 0.01 或峰值 < 0.05）
+    // 检测低音量（RMS < 0.01 或峰值 < 0.05），同时更新窗口计数
     if rms < 0.01 || peak < 0.05 {
         stats.low_volume_count += 1;
+        stats.window_low_count += 1;
     }
 
-    // 每100帧打印一次音量统计（避免频繁打印）
+    // 每100帧打印一次音量统计，使用当前窗口（最近100帧）的低音量比例
     if stats.frame_count % 100 == 0 {
-        let low_volume_ratio = stats.low_volume_count as f32 / stats.frame_count as f32 * 100.0;
+        // window_low_count 只统计最近100帧，比历史累积比例更能反映当前状态
+        let window_low_ratio = stats.window_low_count as f32 / 100.0 * 100.0;
         log::debug!(
-            "音量统计 - RMS: {:.4}, 峰值: {:.4}, 最大: {:.4}, 低音量帧: {:.1}%",
+            "音量统计 - RMS: {:.4}, 峰值: {:.4}, 最大: {:.4}, 低音量帧: {:.1}%（最近100帧）",
             rms,
             peak,
             stats.max_volume,
-            low_volume_ratio
+            window_low_ratio
         );
 
-        // 如果低音量帧比例过高，发出警告
-        if low_volume_ratio > 50.0 {
+        // 如果当前窗口低音量帧比例过高，发出警告
+        if window_low_ratio > 50.0 {
             log::warn!(
                 "⚠️ 检测到高比例低音量帧 ({:.1}%)，建议增加音频增益或检查音频输入源",
-                low_volume_ratio
+                window_low_ratio
             );
         }
 
@@ -76,6 +78,9 @@ fn update_volume_stats(samples: &[f32], stats: &mut VolumeStats) {
                 stats.max_volume
             );
         }
+
+        // 重置窗口计数，开始统计下一个100帧
+        stats.window_low_count = 0;
     }
 }
 
@@ -94,9 +99,9 @@ where
     // 累计样本数据
     state.sample_buffer.extend_from_slice(&samples);
 
-    // 处理累积的样本：当累积足够的样本时进行处理
-    // frame_size 是输入帧大小（每通道的样本数）
-    if state.sample_buffer.len() >= config.frame_size * config.channels as usize {
+    // 处理累积的样本：循环直到缓冲区中不足一帧为止
+    // 每次回调可能带来多帧数据，必须用 while 全部处理
+    while state.sample_buffer.len() >= config.frame_size * config.channels as usize {
         // 分离通道
         for i in 0..config.channels as usize {
             state.channel_data[i].clear();
@@ -105,15 +110,21 @@ where
             }
         }
 
+        // TODO-1: 每100帧记录一次原始各声道峰值，用于诊断相位抵消
+        // 若 ch0_peak ≈ ch1_peak 但 post_mix_peak ≈ 0，则确认为相位抵消
+        if state.volume_stats.frame_count % 100 == 0 {
+            for (i, ch) in state.channel_data.iter().enumerate() {
+                let ch_peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+                log::debug!("原始声道[{}] 峰值: {:.4}", i, ch_peak);
+            }
+        }
+
         // 重采样
         let resampler = &mut state.resampler;
         match resampler.process(&state.channel_data, None) {
             Ok(processed) => {
-                // 强制转换为单声道（无论输入通道数）
+                // 强制转换为单声道（取 RMS 最大声道，避免相位抵消）
                 let mono_samples = mix_to_mono(&processed);
-
-                // 更新音量统计
-                update_volume_stats(&mono_samples, &mut state.volume_stats);
 
                 // 应用音量增益（根据配置调整）
                 let amplified_samples = if config.gain != 1.0 {
@@ -122,6 +133,9 @@ where
                     mono_samples
                 };
 
+                // TODO-3: 在 gain 应用之后统计，反映实际发送给 ASR 的音量
+                update_volume_stats(&amplified_samples, &mut state.volume_stats);
+
                 // 异步发送, 缓冲区满时丢弃数据（发送放大后的音频）
                 if let Err(e) = state.tx.try_send(amplified_samples) {
                     eprintln!("警告: 音频数据通道已满，丢弃当前数据块: {:?}", e);
@@ -129,12 +143,15 @@ where
             }
             Err(e) => eprintln!("Error resampling: {}", e),
         }
-        // 清空已处理的样本数据
-        state.sample_buffer.clear();
+        // TODO-1: 只移除已处理的样本，保留缓冲区中多余的数据供下次处理
+        let consumed = config.frame_size * config.channels as usize;
+        state.sample_buffer.drain(..consumed);
     }
 }
 
-// 关键修复2：多通道转单声道（混合所有通道样本的平均值）
+// 多通道转单声道：选取 RMS 最大的声道，而非平均所有声道。
+// 平均混音在左右声道相位相反时会完全抵消（loopback 设备常见），导致静音。
+// 取 RMS 最大声道可保留最强信号，不受相位关系影响。
 fn mix_to_mono(channels: &[Vec<f32>]) -> Vec<f32> {
     if channels.is_empty() {
         return Vec::new();
@@ -144,29 +161,21 @@ fn mix_to_mono(channels: &[Vec<f32>]) -> Vec<f32> {
         return channels[0].clone();
     }
 
-    // 取所有通道中最长的帧长度（避免样本不足）
-    let max_frames = channels.iter().map(|c| c.len()).max().unwrap_or(0);
-    let mut mono = Vec::with_capacity(max_frames);
+    // 计算各声道 RMS，选信号最强的那路
+    let best_channel = channels
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            let rms_a: f32 = (a.iter().map(|&s| s * s).sum::<f32>() / a.len() as f32).sqrt();
+            let rms_b: f32 = (b.iter().map(|&s| s * s).sum::<f32>() / b.len() as f32).sqrt();
+            rms_a.partial_cmp(&rms_b).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, ch)| ch);
 
-    for i in 0..max_frames {
-        let mut sum = 0.0;
-        let mut count = 0;
-        // 累加所有通道的第i个样本
-        for channel in channels {
-            if i < channel.len() {
-                sum += channel[i];
-                count += 1;
-            }
-        }
-        // 平均样本值（防止音量溢出）
-        let sample = if count > 0 {
-            (sum / count as f32).clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-        mono.push(sample);
+    match best_channel {
+        Some(ch) => ch.clone(),
+        None => Vec::new(),
     }
-    mono
 }
 
 /// 音频设备错误信息（结构化错误，便于前端显示）

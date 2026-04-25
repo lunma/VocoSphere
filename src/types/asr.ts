@@ -29,3 +29,43 @@ export interface ParaformerConfig {
 }
 
 export type AsrModelConfig = GummyConfig | ParaformerConfig
+
+export type AsrProvider = 'local' | 'cloud'
+
+export interface LocalModelConfig {
+  model_path: string
+  language: string
+  n_threads: number
+}
+
+export interface LocalConfig {
+  recognition: LocalModelConfig
+  translation: LocalModelConfig
+}
+
+export interface OssConfig {
+  oss_endpoint: string
+  oss_bucket: string
+  oss_key_id: string
+  oss_key_secret: string
+}
+
+export interface AsrFullConfig {
+  /** 实时采集·语音识别 使用的推理方式 */
+  realtimeRecProvider: AsrProvider
+  /** 实时采集·语音翻译 使用的推理方式 */
+  realtimeTransProvider: AsrProvider
+  /** 文件识别·语音识别 使用的推理方式 */
+  fileRecProvider: AsrProvider
+  /** 文件识别·语音翻译 使用的推理方式 */
+  fileTransProvider: AsrProvider
+  local: LocalConfig
+  cloud: {
+    /** 语音识别模型：Gummy（translation_enabled 固定 false）或 Paraformer */
+    recognition: AsrModelConfig
+    /** 语音翻译模型：Gummy（translation_enabled 固定 true） */
+    translation: GummyConfig
+    /** 文件识别 OSS 配置 */
+    oss: OssConfig
+  }
+}

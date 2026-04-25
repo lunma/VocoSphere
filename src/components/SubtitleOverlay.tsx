@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/window'
-import type { SubtitleSettings } from '@/store/subtitleSettingsStore'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAsrStore, type AsrResultMessage } from '@/store/asrStore'
 import { useEnvironmentStore } from '@/store/environmentStore'
 import { useSubtitleSettingsStore } from '@/store/subtitleSettingsStore'
+
+import type { SubtitleSettings } from '@/store/subtitleSettingsStore'
 
 // 欢迎消息列表
 const WELCOME_MESSAGES = [
@@ -46,8 +47,14 @@ const createInitialQueue = (): SubtitleItem[] => [
   },
 ]
 
+interface StreamingDisplay {
+  text: string
+  translatedText?: string
+  isFinal: boolean
+}
+
 const SubtitleOverlay = () => {
-  const { asrResults, asrConfig } = useAsrStore()
+  const { asrResults, fullConfig } = useAsrStore()
   const settings = useSubtitleSettingsStore()
   const isTauriEnv = useEnvironmentStore((s) => s.isTauriEnv)
 
@@ -58,10 +65,25 @@ const SubtitleOverlay = () => {
   const sentenceIdToSubtitleIdRef = useRef<Map<number, number>>(new Map())
   const bubbleObserverRef = useRef<ResizeObserver | null>(null)
 
-  const isTranslationEnabled = asrConfig?.type === 'gummy' && asrConfig.translation_enabled
+  // 流式模式：回撤动画状态（保持 hook 调用顺序稳定，始终声明）
+  const prevTextRef = useRef<string>('')
+  const [isRetracting, setIsRetracting] = useState(false)
 
-  // 处理 ASR 识别结果（始终处理，不依赖 settings.enabled）
+  const recognition =
+    fullConfig.realtimeRecProvider === 'cloud' ? fullConfig.cloud.recognition : null
+  const isTranslationEnabled = recognition?.type === 'gummy' && recognition.translation_enabled
+
+  // 处理 ASR 识别结果（路径 A：完成模式，流式模式下跳过）
   useEffect(() => {
+    // TODO-3: 流式模式不使用 subtitleQueue，无需执行此 effect
+    if (settings.streamingSubtitles) return
+
+    // 会话重置时清空 sentenceId→subtitleId 映射，避免跨会话 id 复用导致渲染异常
+    if (asrResults.length === 0) {
+      sentenceIdToSubtitleIdRef.current.clear()
+      return
+    }
+
     const finalTranscriptionResults = asrResults.filter(
       (item: AsrResultMessage) => item.kind === 'transcription' && item.is_final
     )
@@ -117,7 +139,61 @@ const SubtitleOverlay = () => {
         },
       ]
     })
+  }, [asrResults, isTranslationEnabled, settings.streamingSubtitles])
+
+  // 流式模式：推导当前活跃句子
+  const streamingDisplay = useMemo((): StreamingDisplay | null => {
+    if (asrResults.length === 0) return null
+
+    const transcriptionResults = asrResults.filter(
+      (item: AsrResultMessage) => item.kind === 'transcription'
+    )
+    if (transcriptionResults.length === 0) return null
+
+    // 找 sentence_id 最大的结果，sentence_id 相同时取 begin_time 最大的
+    const latestTranscription = transcriptionResults.reduce(
+      (best: AsrResultMessage, cur: AsrResultMessage) => {
+        if (cur.sentence_id > best.sentence_id) return cur
+        if (cur.sentence_id === best.sentence_id && cur.begin_time > best.begin_time) return cur
+        return best
+      }
+    )
+
+    let translatedText: string | undefined
+    if (isTranslationEnabled) {
+      const translationResults = asrResults.filter(
+        (item: AsrResultMessage) =>
+          item.kind === 'translation' && item.sentence_id === latestTranscription.sentence_id
+      )
+      if (translationResults.length > 0) {
+        translatedText = translationResults.reduce(
+          (best: AsrResultMessage, cur: AsrResultMessage) =>
+            cur.begin_time > best.begin_time ? cur : best
+        ).text
+      }
+    }
+
+    return {
+      text: latestTranscription.text,
+      translatedText,
+      isFinal: latestTranscription.is_final,
+    }
   }, [asrResults, isTranslationEnabled])
+
+  // 流式模式：监听文本变化，检测回撤并触发动画
+  useEffect(() => {
+    if (!settings.streamingSubtitles) return
+    const newText = streamingDisplay?.text ?? ''
+    const prevText = prevTextRef.current
+    // TODO-1: 必须在判断之前更新 ref，否则回撤时 ref 停留在旧长度，
+    // 导致后续每次文本增长都重复触发回撤动画（视觉"吞字"）
+    prevTextRef.current = newText
+    if (newText.length < prevText.length && prevText.length > 0) {
+      setIsRetracting(true)
+      const timer = setTimeout(() => setIsRetracting(false), 200)
+      return () => clearTimeout(timer)
+    }
+  }, [streamingDisplay?.text, settings.streamingSubtitles])
 
   // 强制当前窗口（字幕悬浮窗）的 html / body / #root 保持透明，
   // 防止 Tauri 默认白色窗口背景或 Vite 注入的样式污染透明区域。
@@ -199,6 +275,7 @@ const SubtitleOverlay = () => {
         padding: '8px 16px',
         borderRadius: 0,
         display: 'inline-block',
+        width: 'fit-content',
         maxWidth: '800px',
         wordWrap: 'break-word',
         lineHeight: 1.5,
@@ -212,6 +289,7 @@ const SubtitleOverlay = () => {
         padding: '6px 16px',
         borderRadius: '4px',
         display: 'inline-block',
+        width: 'fit-content',
         maxWidth: '800px',
         wordWrap: 'break-word',
         lineHeight: 1.5,
@@ -232,6 +310,7 @@ const SubtitleOverlay = () => {
       padding: '12px 24px',
       borderRadius: radiusMap[settings.borderRadius],
       display: 'inline-block',
+      width: 'fit-content',
       maxWidth: '800px',
       wordWrap: 'break-word',
       lineHeight: 1.5,
@@ -316,6 +395,48 @@ const SubtitleOverlay = () => {
     [settings.fontFamily, settings.fontSize, settings.fontStyle]
   )
 
+  // 路径 B：流式字幕模式
+  if (settings.streamingSubtitles) {
+    if (!streamingDisplay) return null
+
+    const interimTextStyle: React.CSSProperties = streamingDisplay.isFinal
+      ? effectiveOriginalTextStyle
+      : {
+          ...effectiveOriginalTextStyle,
+          opacity: isRetracting ? 0.5 : 0.8,
+          transition: 'opacity 0.18s ease',
+          textDecoration: 'underline',
+          textDecorationStyle: 'dashed',
+          textDecorationColor: 'rgba(255,255,255,0.4)',
+        }
+
+    return (
+      <div
+        ref={bubbleRef}
+        {...(!settings.locked ? { 'data-tauri-drag-region': '' } : {})}
+        style={containerStyle}
+      >
+        <div>
+          {streamingDisplay.text.split('\n').map((line: string, index: number) => (
+            <div key={index} style={interimTextStyle}>
+              {line || '\u00A0'}
+            </div>
+          ))}
+        </div>
+        {streamingDisplay.translatedText && (
+          <div style={{ marginTop: 2 }}>
+            {streamingDisplay.translatedText.split('\n').map((line: string, index: number) => (
+              <div key={index} style={translatedTextStyle}>
+                {line || '\u00A0'}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // 路径 A：完成模式（原有逻辑完全不变）
   if (subtitleQueue.length === 0) {
     return null
   }

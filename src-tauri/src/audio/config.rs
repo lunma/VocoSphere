@@ -34,5 +34,6 @@ pub struct VolumeStats {
     pub max_volume: f32,
     pub avg_volume: f32,
     pub frame_count: u64,
-    pub low_volume_count: u64, // 低音量帧计数
+    pub low_volume_count: u64, // 历史低音量帧计数（用于累积统计）
+    pub window_low_count: u64, // 当前窗口（最近100帧）低音量帧计数
 }

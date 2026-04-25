@@ -1,15 +1,16 @@
+import { useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 
-import { useEffect } from 'react'
 import { useAsrListener, useLogsListener } from './hooks/useTauriListeners'
-import { useEnvironmentStore } from './store/environmentStore'
-import { useAsrStore } from './store/asrStore'
 import AppLayout from './layouts/AppLayout'
 import AudioSourceSettingsPage from './pages/AudioSourceSettingsPage'
 import LogsPage from './pages/LogsPage'
 import ModelConfigPage from './pages/ModelConfigPage'
 import SubtitleSettingsPage from './pages/SubtitleSettingsPage'
+import VideoSubtitlePage from './pages/VideoSubtitlePage'
+import { useAsrStore } from './store/asrStore'
+import { useEnvironmentStore } from './store/environmentStore'
 
 const App = () => {
   useAsrListener()
@@ -29,6 +30,7 @@ const App = () => {
           <Route path="audio" element={<AudioSourceSettingsPage />} />
           <Route path="subtitle" element={<SubtitleSettingsPage />} />
           <Route path="logs" element={<LogsPage />} />
+          <Route path="video-subtitle" element={<VideoSubtitlePage />} />
         </Route>
       </Routes>
       <Toaster position="top-right" />

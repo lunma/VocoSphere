@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
 import { emitTo } from '@tauri-apps/api/event'
+import { useEffect } from 'react'
 
 import { useEnvironmentStore } from '@/store/environmentStore'
 import { useSubtitleSettingsStore } from '@/store/subtitleSettingsStore'
+
 import type { SubtitleSettings } from '@/store/subtitleSettingsStore'
 
 function extractSettings(

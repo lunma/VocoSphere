@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { toast } from 'sonner'
 import {
   createContext,
   useCallback,
@@ -12,6 +11,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { toast } from 'sonner'
 
 import { useEnvironment } from './EnvironmentContext'
 

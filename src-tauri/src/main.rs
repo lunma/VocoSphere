@@ -20,8 +20,10 @@ mod app_state;
 mod asr; // ASR（自动语音识别）模块
 mod audio; // 音频处理模块
 mod audio_capture; // 音频捕获功能模块（对外暴露的 Tauri 命令）
+mod file_recognition; // 文件识别命令
 mod logger; // 日志模块（将日志发送到前端）
 mod utils; // 工具函数模块
+mod video_subtitle; // 视频字幕功能模块
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -35,6 +37,20 @@ fn greet(name: &str) -> String {
     }
 
     format!("你好, {}! 来自 Rust 的问候。", name)
+}
+
+/// 将文本内容写入本地文件（用于日志导出）
+#[tauri::command]
+async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// 用系统默认浏览器打开 URL
+#[tauri::command]
+#[allow(deprecated)]
+async fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    app.shell().open(&url, None).map_err(|e| e.to_string())
 }
 
 /// 测试日志功能的命令
@@ -59,9 +75,9 @@ pub fn main() {
     logger::init_logger();
 
     let builder = tauri::Builder::default()
-        // 注册 shell 插件，用于执行系统命令
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_store::Builder::new().build());
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
 
     // macOS：注册 NSPanel 插件（管理 WebviewPanelManager 状态）
     #[cfg(target_os = "macos")]
@@ -72,9 +88,20 @@ pub fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             test_logs,
+            write_text_file,
             audio_capture::get_audio_devices,
             audio_capture::start_audio_capture,
-            audio_capture::stop_audio_capture
+            audio_capture::stop_audio_capture,
+            video_subtitle::get_ffmpeg_version,
+            video_subtitle::check_ffmpeg_subtitle_support,
+            video_subtitle::select_video,
+            video_subtitle::select_model_file,
+            open_url,
+            video_subtitle::extract_audio,
+            video_subtitle::start_video_asr,
+            video_subtitle::export_video_with_subtitles,
+            video_subtitle::translate_subtitles,
+            file_recognition::recognize_file
         ])
         // 设置应用启动后的回调
         .setup(|app| {

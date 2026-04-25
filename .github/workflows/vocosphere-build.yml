@@ -59,7 +59,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf  \
+            patchelf \
             libasound2-dev
 
       - name: Setup Rust toolchain
@@ -78,13 +78,33 @@ jobs:
         run: pnpm install --frozen-lockfile
         # 安装前端依赖，保持 lockfile 一致
 
-      - name: Fix code formatting and line endings
+      - name: Setup ffmpeg static sidecar (macOS / Linux)
+        if: matrix.platform != 'windows-latest'
+        shell: bash
         run: |
-          # 运行 Prettier 自动修复格式和行尾符
-          pnpm format
-          # 运行 ESLint 自动修复可修复的问题
-          pnpm lint:fix
-        # 这会修复行尾符和其他格式问题，确保代码符合规范
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            macOS-ARM64) TRIPLE="aarch64-apple-darwin";      ASSET="ffmpeg-darwin-arm64" ;;
+            macOS-X64)   TRIPLE="x86_64-apple-darwin";       ASSET="ffmpeg-darwin-x64"   ;;
+            Linux-X64)   TRIPLE="x86_64-unknown-linux-gnu";  ASSET="ffmpeg-linux-x64"    ;;
+            Linux-ARM64) TRIPLE="aarch64-unknown-linux-gnu"; ASSET="ffmpeg-linux-arm64"  ;;
+          esac
+          mkdir -p src-tauri/binaries
+          curl -L -o "src-tauri/binaries/ffmpeg-$TRIPLE" \
+            "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/$ASSET"
+          chmod +x "src-tauri/binaries/ffmpeg-$TRIPLE"
+
+      - name: Setup ffmpeg static sidecar (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -Path 'src-tauri/binaries' -ItemType Directory -Force | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-win32-x64" `
+            -OutFile "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe"
+
+      - name: Check code formatting and lint
+        run: |
+          pnpm format:check
+          pnpm lint
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5.13

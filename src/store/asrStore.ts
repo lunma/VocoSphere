@@ -1,10 +1,16 @@
 import { invoke } from '@tauri-apps/api/core'
+import { emit } from '@tauri-apps/api/event'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-
-import type { AsrModelConfig } from '@/types/asr'
 
 import { useEnvironmentStore } from './environmentStore'
+
+import type {
+  AsrFullConfig,
+  GummyConfig,
+  LocalConfig,
+  OssConfig,
+  ParaformerConfig,
+} from '@/types/asr'
 
 export interface AsrResultMessage {
   sentence_id: number
@@ -28,16 +34,90 @@ export interface DeviceError {
   message: string
 }
 
+type CaptureMode = 'loopback' | 'microphone'
+type CaptureTarget = 'recognition' | 'translation'
+
+// ── 默认配置 ──────────────────────────────────────────────────────────────────
+
+export const ASR_FULL_CONFIG_KEY = 'ASR_FULL_CONFIG'
+
+export const DEFAULT_OSS_CONFIG: OssConfig = {
+  oss_endpoint: '',
+  oss_bucket: '',
+  oss_key_id: '',
+  oss_key_secret: '',
+}
+
+const DEFAULT_SERVER = { ws_url: 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/', api_key: '' }
+
+const DEFAULT_GUMMY_RECOGNITION: GummyConfig = {
+  type: 'gummy',
+  server_config: DEFAULT_SERVER,
+  source_language: 'auto',
+  translation_enabled: false,
+  translation_target_languages: [],
+  punctuation_prediction_enabled: true,
+  itn_enabled: true,
+}
+
+const DEFAULT_PARAFORMER: ParaformerConfig = {
+  type: 'paraformer',
+  server_config: DEFAULT_SERVER,
+  source_language: 'zh',
+  disfluency_removal_enabled: false,
+  punctuation_prediction_enabled: true,
+  itn_enabled: true,
+  emotion_enabled: false,
+}
+
+const DEFAULT_GUMMY_TRANSLATION: GummyConfig = {
+  type: 'gummy',
+  server_config: DEFAULT_SERVER,
+  source_language: 'auto',
+  translation_enabled: true,
+  translation_target_languages: ['zh'],
+  punctuation_prediction_enabled: true,
+  itn_enabled: true,
+}
+
+const DEFAULT_LOCAL_MODEL = { model_path: '', language: 'auto', n_threads: 4 }
+
+export const DEFAULT_LOCAL_CONFIG: LocalConfig = {
+  recognition: DEFAULT_LOCAL_MODEL,
+  translation: DEFAULT_LOCAL_MODEL,
+}
+
+export const DEFAULT_FULL_CONFIG: AsrFullConfig = {
+  realtimeRecProvider: 'cloud',
+  realtimeTransProvider: 'cloud',
+  fileRecProvider: 'cloud',
+  fileTransProvider: 'cloud',
+  local: DEFAULT_LOCAL_CONFIG,
+  cloud: {
+    recognition: DEFAULT_GUMMY_RECOGNITION,
+    translation: DEFAULT_GUMMY_TRANSLATION,
+    oss: DEFAULT_OSS_CONFIG,
+  },
+}
+
+export { DEFAULT_GUMMY_RECOGNITION, DEFAULT_PARAFORMER, DEFAULT_GUMMY_TRANSLATION }
+
+// ── Store ─────────────────────────────────────────────────────────────────────
+
 interface AsrStore {
-  asrConfig: AsrModelConfig | null
+  fullConfig: AsrFullConfig
   isCapturing: boolean
   audioStatus: string
   asrResults: AsrResultMessage[]
   audioDevices: AudioDevice[]
   selectedDevice: string | null
+  captureMode: CaptureMode
+  captureTarget: CaptureTarget
 
-  setAsrConfig: (config: AsrModelConfig | null) => void
+  setFullConfig: (config: AsrFullConfig) => void
   setSelectedDevice: (device: string | null) => void
+  setCaptureMode: (mode: CaptureMode) => void
+  setCaptureTarget: (target: CaptureTarget) => void
   addAsrResult: (result: AsrResultMessage) => void
   clearAsrResults: () => void
   refreshAudioDevices: () => Promise<void>
@@ -77,114 +157,141 @@ export const formatTimeRange = (begin: number, end?: number | null): string => {
   return `${beginSec}s`
 }
 
-export const useAsrStore = create<AsrStore>()(
-  persist(
-    (set, get) => ({
-      asrConfig: null,
-      isCapturing: false,
-      audioStatus: '',
-      asrResults: [],
-      audioDevices: [],
-      selectedDevice: null,
+const loadFullConfig = (): AsrFullConfig => {
+  try {
+    const raw = localStorage.getItem(ASR_FULL_CONFIG_KEY)
+    return raw ? (JSON.parse(raw) as AsrFullConfig) : DEFAULT_FULL_CONFIG
+  } catch {
+    return DEFAULT_FULL_CONFIG
+  }
+}
 
-      setAsrConfig: (config) => set({ asrConfig: config }),
+export const useAsrStore = create<AsrStore>()((set, get) => ({
+  fullConfig: loadFullConfig(),
+  isCapturing: false,
+  audioStatus: '',
+  asrResults: [],
+  audioDevices: [],
+  selectedDevice: null,
+  captureMode: 'loopback',
+  captureTarget: 'recognition',
 
-      setSelectedDevice: (device) => set({ selectedDevice: device }),
+  setFullConfig: (config) => {
+    localStorage.setItem(ASR_FULL_CONFIG_KEY, JSON.stringify(config))
+    set({ fullConfig: config })
+  },
 
-      addAsrResult: (result) => {
-        set((state) => {
-          const normalized: AsrResultMessage = { ...result, end_time: result.end_time ?? null }
-          const existingIndex = state.asrResults.findIndex(
-            (item) =>
-              item.kind === normalized.kind &&
-              item.sentence_id === normalized.sentence_id &&
-              (item.lang ?? '') === (normalized.lang ?? '')
-          )
+  setSelectedDevice: (device) => set({ selectedDevice: device }),
 
-          let nextResults: AsrResultMessage[]
-          if (existingIndex >= 0) {
-            nextResults = [...state.asrResults]
-            nextResults[existingIndex] = { ...nextResults[existingIndex], ...normalized }
-          } else {
-            nextResults = [...state.asrResults, normalized]
-          }
+  setCaptureMode: (mode) => set({ captureMode: mode }),
 
-          return {
-            asrResults: nextResults.slice().sort((a, b) => {
-              if (a.begin_time !== b.begin_time) return a.begin_time - b.begin_time
-              if (a.sentence_id !== b.sentence_id) return a.sentence_id - b.sentence_id
-              return (a.lang ?? '').localeCompare(b.lang ?? '')
-            }),
-          }
-        })
-      },
+  setCaptureTarget: (target) => set({ captureTarget: target }),
 
-      clearAsrResults: () => set({ asrResults: [] }),
+  addAsrResult: (result) => {
+    set((state) => {
+      const normalized: AsrResultMessage = { ...result, end_time: result.end_time ?? null }
+      const existingIndex = state.asrResults.findIndex(
+        (item) =>
+          item.kind === normalized.kind &&
+          item.sentence_id === normalized.sentence_id &&
+          (item.lang ?? '') === (normalized.lang ?? '')
+      )
 
-      refreshAudioDevices: async () => {
-        if (!useEnvironmentStore.getState().isTauriEnv) return
-        try {
-          const deviceList = await invoke<AudioDevice[]>('get_audio_devices')
-          const { selectedDevice } = get()
+      let nextResults: AsrResultMessage[]
+      if (existingIndex >= 0) {
+        const existing = state.asrResults[existingIndex]
+        if (existing.is_final && !normalized.is_final) return state
+        nextResults = [...state.asrResults]
+        nextResults[existingIndex] = { ...existing, ...normalized }
+      } else {
+        nextResults = [...state.asrResults, normalized]
+      }
 
-          let nextDevice = selectedDevice
-          if (!selectedDevice && deviceList.length > 0) {
-            nextDevice = (deviceList.find((d) => d.is_default) ?? deviceList[0]).name
-          }
-          if (
-            selectedDevice &&
-            deviceList.length > 0 &&
-            !deviceList.some((d) => d.name === selectedDevice)
-          ) {
-            nextDevice = (deviceList.find((d) => d.is_default) ?? deviceList[0]).name
-          }
+      return {
+        asrResults: nextResults.slice().sort((a, b) => {
+          if (a.begin_time !== b.begin_time) return a.begin_time - b.begin_time
+          if (a.sentence_id !== b.sentence_id) return a.sentence_id - b.sentence_id
+          return (a.lang ?? '').localeCompare(b.lang ?? '')
+        }),
+      }
+    })
+  },
 
-          set({ audioDevices: deviceList, selectedDevice: nextDevice })
-        } catch (error) {
-          console.error('获取音频设备列表失败:', error)
-        }
-      },
+  clearAsrResults: () => set({ asrResults: [] }),
 
-      handleStartAudioCapture: async () => {
-        const { asrConfig, selectedDevice } = get()
-        if (!asrConfig) {
-          set({ audioStatus: '错误: 配置尚未加载' })
-          return
-        }
-        try {
-          set({ audioStatus: '正在启动音频捕获...' })
-          const result = await invoke<string>('start_audio_capture', {
-            config: asrConfig,
-            deviceName: selectedDevice,
-          })
-          set({ isCapturing: true, audioStatus: result + ' - 点击停止按钮结束捕获' })
-        } catch (error: unknown) {
-          let errorMessage = String(error)
-          try {
-            const deviceError: DeviceError = JSON.parse(errorMessage)
-            if (deviceError.error_type === 'LOOPBACK_DEVICE_NOT_FOUND') {
-              errorMessage = getDeviceNotFoundMessage(deviceError.platform)
-            }
-          } catch {
-            // 非结构化错误，使用原始消息
-          }
-          set({ isCapturing: false, audioStatus: `错误: ${errorMessage}` })
-        }
-      },
+  refreshAudioDevices: async () => {
+    if (!useEnvironmentStore.getState().isTauriEnv) return
+    try {
+      const deviceList = await invoke<AudioDevice[]>('get_audio_devices')
+      const { selectedDevice } = get()
 
-      handleStopAudioCapture: async () => {
-        try {
-          set({ audioStatus: '正在停止音频捕获...' })
-          const result = await invoke<string>('stop_audio_capture')
-          set({ isCapturing: false, audioStatus: result })
-        } catch (error) {
-          set({ audioStatus: `错误: ${error}` })
-        }
-      },
-    }),
-    {
-      name: 'asr_model_config',
-      partialize: (state) => ({ asrConfig: state.asrConfig }),
+      let nextDevice = selectedDevice
+      if (!selectedDevice && deviceList.length > 0) {
+        nextDevice = (deviceList.find((d) => d.is_default) ?? deviceList[0]).name
+      }
+      if (
+        selectedDevice &&
+        deviceList.length > 0 &&
+        !deviceList.some((d) => d.name === selectedDevice)
+      ) {
+        nextDevice = (deviceList.find((d) => d.is_default) ?? deviceList[0]).name
+      }
+
+      set({ audioDevices: deviceList, selectedDevice: nextDevice })
+    } catch (error) {
+      console.error('获取音频设备列表失败:', error)
     }
-  )
-)
+  },
+
+  handleStartAudioCapture: async () => {
+    const { fullConfig, selectedDevice, captureTarget } = get()
+
+    const activeProvider =
+      captureTarget === 'recognition'
+        ? fullConfig.realtimeRecProvider
+        : fullConfig.realtimeTransProvider
+
+    if (activeProvider === 'local') {
+      set({ audioStatus: '错误: 本地模型暂未实现' })
+      return
+    }
+
+    const streamingConfig =
+      captureTarget === 'translation'
+        ? { ...fullConfig.cloud.translation, translation_enabled: true }
+        : fullConfig.cloud.recognition
+    const config = { type: 'cloud' as const, streaming: streamingConfig }
+    try {
+      set({ audioStatus: '正在启动音频捕获...' })
+      if (useEnvironmentStore.getState().isTauriEnv) {
+        emit('asr-session-reset').catch(() => {})
+      }
+      const result = await invoke<string>('start_audio_capture', {
+        config,
+        deviceName: selectedDevice,
+      })
+      set({ isCapturing: true, audioStatus: result + ' - 点击停止按钮结束捕获' })
+    } catch (error: unknown) {
+      let errorMessage = String(error)
+      try {
+        const deviceError: DeviceError = JSON.parse(errorMessage)
+        if (deviceError.error_type === 'LOOPBACK_DEVICE_NOT_FOUND') {
+          errorMessage = getDeviceNotFoundMessage(deviceError.platform)
+        }
+      } catch {
+        // 非结构化错误，使用原始消息
+      }
+      set({ isCapturing: false, audioStatus: `错误: ${errorMessage}` })
+    }
+  },
+
+  handleStopAudioCapture: async () => {
+    try {
+      set({ audioStatus: '正在停止音频捕获...' })
+      const result = await invoke<string>('stop_audio_capture')
+      set({ isCapturing: false, audioStatus: result })
+    } catch (error) {
+      set({ audioStatus: `错误: ${error}` })
+    }
+  },
+}))

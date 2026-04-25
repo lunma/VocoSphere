@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
-import { History } from 'lucide-react'
+import { save } from '@tauri-apps/plugin-dialog'
+import { Download, History } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -8,26 +9,20 @@ import { useEnvironmentStore } from '@/store/environmentStore'
 import { useLogsStore, getLogBgColor, type LogMessage } from '@/store/logsStore'
 
 const LogsPage = () => {
-  const { logs, clearLogs, autoScroll, setAutoScroll } = useLogsStore()
+  const { logs, clearLogs } = useLogsStore()
   const isTauriEnv = useEnvironmentStore((s) => s.isTauriEnv)
 
   const logsContainerRef = useRef<HTMLDivElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
 
-  const scrollToBottom = (smooth: boolean) => {
+  useEffect(() => {
+    if (!autoScroll || logs.length === 0) return
     const container = logsContainerRef.current
     if (!container) return
     requestAnimationFrame(() => {
-      container.scrollTo({ top: container.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
     })
-  }
-
-  useEffect(() => {
-    if (autoScroll && logs.length > 0) scrollToBottom(true)
   }, [logs, autoScroll])
-
-  useEffect(() => {
-    if (autoScroll) scrollToBottom(false)
-  }, [autoScroll])
 
   const handleTestLogs = async () => {
     if (!isTauriEnv) return
@@ -37,6 +32,26 @@ const LogsPage = () => {
     } catch (error) {
       console.error('测试日志失败:', error)
       toast.error('测试日志失败')
+    }
+  }
+
+  const handleExportLogs = async () => {
+    if (!isTauriEnv || logs.length === 0) return
+    try {
+      const path = await save({
+        filters: [{ name: '日志文件', extensions: ['txt', 'log'] }],
+        defaultPath: `vocosphere_logs_${new Date().toISOString().slice(0, 10)}.txt`,
+      })
+      if (!path) return
+
+      const content = logs
+        .map((log) => `[${log.timestamp}] [${log.level}] [${log.target}] ${log.message}`)
+        .join('\n')
+
+      await invoke('write_text_file', { path, content })
+      toast.success(`日志已导出：${path}`)
+    } catch (error) {
+      toast.error(`导出失败：${String(error)}`)
     }
   }
 
@@ -81,10 +96,19 @@ const LogsPage = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setAutoScroll(!autoScroll)}
+                onClick={() => setAutoScroll((v) => !v)}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900"
               >
                 {autoScroll ? '关闭自动滚动' : '开启自动滚动'}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportLogs}
+                disabled={logs.length === 0 || !isTauriEnv}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Download size={14} />
+                导出日志
               </button>
               <button
                 type="button"

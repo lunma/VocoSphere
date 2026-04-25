@@ -9,16 +9,13 @@ export interface LogMessage {
 
 interface LogsStore {
   logs: LogMessage[]
-  autoScroll: boolean
 
   addLog: (log: LogMessage) => void
   clearLogs: () => void
-  setAutoScroll: (value: boolean) => void
 }
 
 export const useLogsStore = create<LogsStore>((set) => ({
   logs: [],
-  autoScroll: true,
 
   addLog: (log) =>
     set((state) => {
@@ -27,8 +24,6 @@ export const useLogsStore = create<LogsStore>((set) => ({
     }),
 
   clearLogs: () => set({ logs: [] }),
-
-  setAutoScroll: (value) => set({ autoScroll: value }),
 }))
 
 export const getLogColor = (level: string): string => {

@@ -1,10 +1,11 @@
-import { useCallback, useEffect } from 'react'
-import { load } from '@tauri-apps/plugin-store'
 import { emit } from '@tauri-apps/api/event'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { load } from '@tauri-apps/plugin-store'
+import { useCallback, useEffect } from 'react'
 
-import { useSubtitleSettingsStore, DEFAULT_SETTINGS } from '@/store/subtitleSettingsStore'
 import { useEnvironmentStore } from '@/store/environmentStore'
+import { useSubtitleSettingsStore, DEFAULT_SETTINGS } from '@/store/subtitleSettingsStore'
+
 import type { SubtitleSettings } from '@/store/subtitleSettingsStore'
 
 const STORE_FILE = 'subtitle_settings.json'

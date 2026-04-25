@@ -14,6 +14,7 @@ export interface SubtitleSettings {
   borderRadius: 'none' | 'small' | 'medium' | 'pill'
   windowX: number | null
   windowY: number | null
+  streamingSubtitles: boolean
 }
 
 interface SubtitleSettingsStore extends SubtitleSettings {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: SubtitleSettings = {
   borderRadius: 'pill',
   windowX: null,
   windowY: null,
+  streamingSubtitles: false,
 }
 
 export const useSubtitleSettingsStore = create<SubtitleSettingsStore>()((set) => ({

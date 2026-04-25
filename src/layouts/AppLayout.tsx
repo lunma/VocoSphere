@@ -1,9 +1,18 @@
-import { FileText, History, Settings2, PanelLeftClose, PanelLeftOpen, Volume2 } from 'lucide-react'
+import {
+  FileText,
+  History,
+  Settings2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Volume2,
+  Film,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
-type SectionPath = '/' | '/audio' | '/logs' | '/subtitle'
+import type { ReactNode } from 'react'
+
+type SectionPath = '/' | '/audio' | '/logs' | '/subtitle' | '/video-subtitle'
 
 interface MenuItem {
   path: SectionPath
@@ -16,6 +25,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/audio', label: '音频源', icon: <Volume2 size={18} /> },
   { path: '/subtitle', label: '字幕', icon: <FileText size={18} /> },
   { path: '/logs', label: '运行日志', icon: <History size={18} /> },
+  { path: '/video-subtitle', label: '视频字幕', icon: <Film size={18} /> },
 ]
 
 const AppLayout = () => {

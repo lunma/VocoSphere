@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Mic, Square } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import CustomSelect from '@/components/CustomSelect'
 import { useAsrStore, formatTimeRange, type AsrResultMessage } from '@/store/asrStore'
 
-type CaptureMode = 'loopback' | 'microphone'
+const CAPTURE_MODE_KEY = 'CAPTURE_MODE'
 
 interface GroupedResult {
   transcription: AsrResultMessage
@@ -75,18 +75,42 @@ const AudioSourceSettingsPage = () => {
     selectedDevice,
     setSelectedDevice,
     refreshAudioDevices,
-    asrConfig,
+    fullConfig,
+    captureMode,
+    setCaptureMode,
+    captureTarget,
+    setCaptureTarget,
   } = useAsrStore()
 
-  const [captureMode, setCaptureMode] = useState<CaptureMode>('loopback')
-
-  const isTranslationEnabled = asrConfig?.type === 'gummy' && asrConfig.translation_enabled
-  const sourceLanguage = asrConfig?.source_language || '未知'
+  const activeRealtimeProvider =
+    captureTarget === 'recognition'
+      ? fullConfig.realtimeRecProvider
+      : fullConfig.realtimeTransProvider
+  const cloudConfig = activeRealtimeProvider === 'cloud' ? fullConfig.cloud : null
+  const recognition = cloudConfig?.recognition ?? null
+  const isTranslationConfigured =
+    cloudConfig?.translation?.type === 'gummy' &&
+    cloudConfig.translation.server_config.api_key.length > 0
+  const isTranslationEnabled = recognition?.type === 'gummy' && recognition.translation_enabled
+  const sourceLanguage = recognition?.source_language || '未知'
 
   const filteredAudioDevices = useMemo(
     () => audioDevices.filter((device) => device.device_type === captureMode),
     [audioDevices, captureMode]
   )
+
+  // 恢复上次选择的捕获模式
+  useEffect(() => {
+    const saved = localStorage.getItem(CAPTURE_MODE_KEY)
+    if (saved === 'microphone' || saved === 'loopback') {
+      setCaptureMode(saved)
+    }
+  }, [setCaptureMode])
+
+  // 持久化捕获模式变更
+  useEffect(() => {
+    localStorage.setItem(CAPTURE_MODE_KEY, captureMode)
+  }, [captureMode])
 
   useEffect(() => {
     if (isCapturing) return
@@ -115,6 +139,18 @@ const AudioSourceSettingsPage = () => {
       }))
       .sort((a, b) => a.transcription.begin_time - b.transcription.begin_time)
   }, [asrResults])
+
+  const resultsContainerRef = useRef<HTMLDivElement>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  useEffect(() => {
+    if (!autoScroll || groupedResults.length === 0) return
+    const container = resultsContainerRef.current
+    if (!container) return
+    requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    })
+  }, [groupedResults, autoScroll])
 
   return (
     <div className="w-full max-w-5xl mx-auto flex flex-col gap-6">
@@ -167,6 +203,47 @@ const AudioSourceSettingsPage = () => {
             />
           </div>
 
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-700">捕获目标</div>
+            <div className="grid gap-3">
+              {(
+                [
+                  { value: 'recognition', label: '语音识别', hint: '将语音转为文字' },
+                  {
+                    value: 'translation',
+                    label: '语音翻译',
+                    hint: isTranslationConfigured
+                      ? '识别并实时翻译（需在「模型」页配置翻译模型）'
+                      : '需先在「模型」页配置翻译模型 API Key',
+                  },
+                ] as const
+              ).map(({ value, label, hint }) => (
+                <label
+                  key={value}
+                  className={`flex items-start gap-3 rounded-xl border px-4 py-3 transition-all ${
+                    captureTarget === value
+                      ? 'border-blue-200/80 bg-blue-50/50'
+                      : 'border-slate-200 bg-white'
+                  } ${isCapturing || (value === 'translation' && !isTranslationConfigured) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <input
+                    type="radio"
+                    name="captureTarget"
+                    value={value}
+                    checked={captureTarget === value}
+                    disabled={isCapturing || (value === 'translation' && !isTranslationConfigured)}
+                    onChange={() => setCaptureTarget(value)}
+                    className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500/10"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">{label}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{hint}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
           {audioStatus && (
             <div
               className={`rounded-xl border px-4 py-3 text-sm ${
@@ -201,63 +278,68 @@ const AudioSourceSettingsPage = () => {
 
       <section className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_12px_rgba(15,23,42,0.03)] overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-slate-900">识别输出</h2>
-          <SecondaryButton className="px-3 py-2" disabled={false} onClick={clearAsrResults}>
-            清空结果
-          </SecondaryButton>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-900">识别输出</h2>
+            <span className="inline-flex items-center rounded-lg border border-slate-200/80 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
+              {groupedResults.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <SecondaryButton className="px-3 py-2" onClick={() => setAutoScroll((v) => !v)}>
+              {autoScroll ? '关闭自动滚动' : '开启自动滚动'}
+            </SecondaryButton>
+            <SecondaryButton className="px-3 py-2" onClick={clearAsrResults}>
+              清空结果
+            </SecondaryButton>
+          </div>
         </div>
 
-        {groupedResults.length === 0 ? (
-          <div className="py-12 flex items-center justify-center text-sm text-slate-500">
-            暂未收到识别文本
-          </div>
-        ) : (
-          <div className="px-6 py-6 space-y-4">
-            {groupedResults.map(({ transcription, translations }: GroupedResult) => (
-              <article
-                key={`transcription-${transcription.sentence_id}-${transcription.lang ?? 'default'}`}
-                className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={transcription.is_final ? 'secondary' : 'outline'}>
-                    {transcription.is_final ? '最终' : '临时'}
-                  </Badge>
-                  <div className="text-xs text-slate-500">
-                    句子 #{transcription.sentence_id} ·{' '}
-                    {formatTimeRange(transcription.begin_time, transcription.end_time)}
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">源语言: {sourceLanguage.toUpperCase()}</Badge>
+        <div className="px-6 py-5">
+          <div
+            ref={resultsContainerRef}
+            className="max-h-128 overflow-y-auto rounded-xl border border-slate-200/80 bg-slate-50/40 p-2"
+          >
+            {groupedResults.length === 0 ? (
+              <div className="py-10 text-center text-sm text-slate-500">暂未收到识别文本</div>
+            ) : (
+              <div className="space-y-1.5">
+                {groupedResults.map(({ transcription, translations }: GroupedResult) => (
+                  <article
+                    key={`transcription-${transcription.sentence_id}-${transcription.lang ?? 'default'}`}
+                    className="rounded-xl border border-slate-200/80 bg-white px-4 py-3"
+                  >
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <Badge variant={transcription.is_final ? 'secondary' : 'outline'}>
+                        {transcription.is_final ? '最终' : '临时'}
+                      </Badge>
+                      <span>#{transcription.sentence_id}</span>
+                      <span>
+                        {formatTimeRange(transcription.begin_time, transcription.end_time)}
+                      </span>
+                      <span>{sourceLanguage.toUpperCase()}</span>
+                      {isTranslationEnabled &&
+                        translations.map((t) => (
+                          <span key={`lang-${t.sentence_id}-${t.lang ?? 'default'}`}>
+                            → {t.lang?.toUpperCase() || '未知'}
+                          </span>
+                        ))}
+                    </div>
+                    <p className="text-sm text-slate-900">{transcription.text || '（空）'}</p>
                     {isTranslationEnabled &&
                       translations.map((t) => (
-                        <Badge
-                          key={`target-lang-${t.sentence_id}-${t.lang ?? 'default'}`}
-                          variant="secondary"
+                        <p
+                          key={`translation-${t.sentence_id}-${t.lang ?? 'default'}`}
+                          className="mt-1 text-sm text-slate-500"
                         >
-                          目标语言: {t.lang?.toUpperCase() || '未知'}
-                        </Badge>
+                          {t.text || '（空）'}
+                        </p>
                       ))}
-                  </div>
-                  <div className="text-sm text-slate-900 font-medium">
-                    {transcription.text || '（空）'}
-                  </div>
-                  {isTranslationEnabled &&
-                    translations.map((t) => (
-                      <div
-                        key={`translation-${t.sentence_id}-${t.lang ?? 'default'}`}
-                        className="text-sm text-slate-600"
-                      >
-                        {t.text || '（空）'}
-                      </div>
-                    ))}
-                </div>
-              </article>
-            ))}
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </section>
     </div>
   )

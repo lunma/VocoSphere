@@ -1,5 +1,6 @@
 import CustomSelect from '@/components/CustomSelect'
 import { useSubtitleSettings } from '@/hooks/useSubtitleSettings'
+
 import type { SubtitleSettings } from '@/store/subtitleSettingsStore'
 
 const FONT_FAMILIES = [
@@ -92,6 +93,29 @@ const SubtitleSettingsPage = () => {
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
                   settings.locked ? 'translate-x-4' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium text-slate-700">流式字幕</div>
+              <div className="text-xs text-slate-500">
+                实时显示识别过程中的文字，包含回撤修正效果
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => updateSetting('streamingSubtitles', !settings.streamingSubtitles)}
+              disabled={!enabled}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-4 focus:ring-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed ${
+                settings.streamingSubtitles ? 'bg-blue-600' : 'bg-slate-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                  settings.streamingSubtitles ? 'translate-x-4' : 'translate-x-1'
                 }`}
               />
             </button>

@@ -5,9 +5,13 @@ body {
   overflow: hidden;
   background: transparent !important;
   background-color: transparent !important;
+  /* 让 body 宽度由内容决定，而非由窗口宽度约束，
+     解决 inline-block fit-content 被窗口夹住无法横向扩展的问题 */
+  width: max-content;
 }
 
 #root {
   display: inline-block;
+  width: fit-content;
   background: transparent !important;
 }

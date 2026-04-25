@@ -11,7 +11,6 @@ use tauri::async_runtime;
 use tokio::sync::mpsc;
 
 // 导入 crate 中的其他模块
-use crate::asr;
 use crate::asr::config::AsrProviderConfig;
 use crate::asr::provider::{CloudAsrProvider, LocalAsrProvider};
 use crate::asr::AsrProvider;
